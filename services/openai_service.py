@@ -7,7 +7,6 @@ import logging
 from typing import Any, Dict
 
 from openai import OpenAI
-from openai.error import OpenAIError
 
 from config import settings
 
@@ -87,7 +86,7 @@ def analyze_answers(payload: Dict[str, Any]) -> Dict[str, Any]:
             ],
             temperature=0.2,
         )
-    except OpenAIError as exc:  # pragma: no cover - external service
+    except Exception as exc:  # pragma: no cover - external service
         logger.error("OpenAI API error: %s", exc)
         return DEFAULT_ANALYSIS.copy()
 
@@ -123,7 +122,7 @@ def generate_chat_reply(payload: Dict[str, Any]) -> str:
             ],
             temperature=0.35,
         )
-    except OpenAIError as exc:  # pragma: no cover - external service
+    except Exception as exc:  # pragma: no cover - external service
         logger.error("OpenAI chat error: %s", exc)
         return ""
 
@@ -149,7 +148,11 @@ def _build_chat_prompt(payload: Dict[str, Any]) -> str:
 def _extract_text(response) -> str:
     """Fallback extraction for older SDK versions."""
     try:
-        return "".join(part.text for part in getattr(response, "output", []) if getattr(part, "text", None))
+        return "".join(
+            part.text
+            for part in getattr(response, "output", [])
+            if getattr(part, "text", None)
+        )
     except Exception:  # pragma: no cover - defensive
         return ""
 

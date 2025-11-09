@@ -24,7 +24,7 @@ from telegram.ext import (
 from config import settings
 
 from . import keyboards, messages
-from .questions import Question, get_question_by_id
+from .questions import Question
 from .states import ConversationState
 from .utils import (
     ANSWERS_KEY,
@@ -45,6 +45,7 @@ from .utils import (
     get_chat_history,
     get_skill_level_text,
     find_option_by_key,
+    get_question_by_id,
     record_single_answer,
     reset_user_session,
     set_current_question_message,
