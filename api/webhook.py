@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import logging
 from http import HTTPStatus
 from typing import Any, Dict
 
@@ -11,6 +12,10 @@ from telegram.error import TelegramError
 
 from bot.handlers import build_application
 from config import settings
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 
 application = None
 _application_ready = False
@@ -36,6 +41,7 @@ async def _ensure_application_ready() -> None:
 
         await application.initialize()
         await application.start()
+        logger.info("Telegram application started successfully.")
         _application_ready = True
 
 
@@ -75,11 +81,13 @@ def handler(event, context):
     try:
         asyncio.run(_process_update(update_json))
     except TelegramError as exc:  # pragma: no cover - defensive logging
+        logger.exception("Telegram API error while processing update.")
         return {
             "statusCode": HTTPStatus.INTERNAL_SERVER_ERROR,
             "body": f"telegram error: {exc}",
         }
     except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Unhandled error while processing update.")
         return {
             "statusCode": HTTPStatus.INTERNAL_SERVER_ERROR,
             "body": f"error: {exc}",
