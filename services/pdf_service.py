@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import html
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -20,8 +22,8 @@ from config import settings
 from bot import utils
 from templates import report_static
 
-REPORTS_DIR = Path("reports")
-REPORTS_DIR.mkdir(exist_ok=True)
+REPORTS_DIR = Path(os.getenv("PDF_OUTPUT_DIR", tempfile.gettempdir())) / "tg_transformator_reports"
+REPORTS_DIR.mkdir(exist_ok=True, parents=True)
 
 DEFAULT_FONT_NAME = "Helvetica"
 
