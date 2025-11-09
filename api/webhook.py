@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import traceback
 from http import HTTPStatus
 from typing import Any, Dict
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
+logger.info("WEBHOOK module imported. Token present: %s", bool(settings.telegram_token))
+logger.info("Environment vars: TELEGRAM_BOT_TOKEN=%s", settings.telegram_token[:5] + "***" if settings.telegram_token else "<empty>")
+
 application = None
 _application_ready = False
 _application_lock = None
@@ -27,17 +31,18 @@ async def _ensure_application_ready() -> None:
     """Make sure the application is initialized and started once per cold start."""
     global application, _application_ready, _application_lock
 
-    if _application_ready:
+    if _application_ready and application is not None:
         return
 
     if _application_lock is None:
         _application_lock = asyncio.Lock()
 
     async with _application_lock:
-        if _application_ready:
+        if _application_ready and application is not None:
             return
 
         if application is None:
+            logger.info("Building Telegram application...")
             application = build_application()
 
         await application.initialize()
@@ -55,6 +60,7 @@ async def _process_update(update_json: Dict[str, Any]) -> None:
 
 
 def handler(event, context):
+    logger.info("Handler invoked with event: %s", event)
     del context
     method = (event.get("httpMethod") or event.get("method") or "POST").upper()
     if method == "GET":
@@ -92,7 +98,7 @@ def handler(event, context):
         trace = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         return {
             "statusCode": HTTPStatus.INTERNAL_SERVER_ERROR,
-            "body": f"error: {exc}\n{trace}",
+            "body": f"error: {exc}\n{trace}\nToken present: {bool(settings.telegram_token)}",
         }
 
     return {"statusCode": HTTPStatus.OK, "body": "ok"}
