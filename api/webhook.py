@@ -19,8 +19,9 @@ logger = logging.getLogger(__name__)
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
-logger.info("WEBHOOK module imported. Token present: %s", bool(settings.telegram_token))
-logger.info("Environment vars: TELEGRAM_BOT_TOKEN=%s", settings.telegram_token[:5] + "***" if settings.telegram_token else "<empty>")
+print("[webhook] module imported", flush=True)
+print("[webhook] TELEGRAM_BOT_TOKEN present:", bool(settings.telegram_token), flush=True)
+print("[webhook] TELEGRAM_SECRET_TOKEN present:", bool(settings.telegram_secret_token), flush=True)
 
 application = None
 _application_ready = False
@@ -28,7 +29,6 @@ _application_lock = None
 
 
 async def _ensure_application_ready() -> None:
-    """Make sure the application is initialized and started once per cold start."""
     global application, _application_ready, _application_lock
 
     if _application_ready and application is not None:
@@ -42,11 +42,13 @@ async def _ensure_application_ready() -> None:
             return
 
         if application is None:
+            print("[webhook] building application", flush=True)
             logger.info("Building Telegram application...")
             application = build_application()
 
         await application.initialize()
         await application.start()
+        print("[webhook] application started", flush=True)
         logger.info("Telegram application started successfully.")
         _application_ready = True
 
@@ -60,7 +62,8 @@ async def _process_update(update_json: Dict[str, Any]) -> None:
 
 
 def handler(event, context):
-    logger.info("Handler invoked with event: %s", event)
+    print("[webhook] handler invoked", flush=True)
+    print("[webhook] event keys:", list((event or {}).keys()), flush=True)
     del context
     method = (event.get("httpMethod") or event.get("method") or "POST").upper()
     if method == "GET":
@@ -77,6 +80,7 @@ def handler(event, context):
             return {"statusCode": HTTPStatus.BAD_REQUEST, "body": "invalid base64 body"}
 
     headers = event.get("headers") or {}
+    print("[webhook] headers: ", headers, flush=True)
     if not _validate_secret(headers):
         return {"statusCode": HTTPStatus.FORBIDDEN, "body": "invalid secret"}
 
