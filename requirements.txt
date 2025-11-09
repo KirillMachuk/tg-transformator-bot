@@ -1,0 +1,9 @@
+python-telegram-bot==21.4
+openai==1.45.0
+google-auth==2.33.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.147.0
+reportlab==4.2.2
+python-dotenv==1.0.1
+pandas==2.2.3
