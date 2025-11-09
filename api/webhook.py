@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import traceback
 from http import HTTPStatus
 from typing import Any, Dict
 
@@ -88,9 +89,10 @@ def handler(event, context):
         }
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.exception("Unhandled error while processing update.")
+        trace = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         return {
             "statusCode": HTTPStatus.INTERNAL_SERVER_ERROR,
-            "body": f"error: {exc}",
+            "body": f"error: {exc}\n{trace}",
         }
 
     return {"statusCode": HTTPStatus.OK, "body": "ok"}
