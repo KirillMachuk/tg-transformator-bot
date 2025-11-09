@@ -12,14 +12,14 @@ from telegram.error import TelegramError
 from bot.handlers import build_application
 from config import settings
 
-application = build_application()
+application = None
 _application_ready = False
 _application_lock = None
 
 
 async def _ensure_application_ready() -> None:
     """Make sure the application is initialized and started once per cold start."""
-    global _application_ready, _application_lock
+    global application, _application_ready, _application_lock
 
     if _application_ready:
         return
@@ -31,6 +31,9 @@ async def _ensure_application_ready() -> None:
         if _application_ready:
             return
 
+        if application is None:
+            application = build_application()
+
         await application.initialize()
         await application.start()
         _application_ready = True
@@ -38,6 +41,8 @@ async def _ensure_application_ready() -> None:
 
 async def _process_update(update_json: Dict[str, Any]) -> None:
     await _ensure_application_ready()
+    if application is None:
+        raise RuntimeError("Application failed to initialize.")
     update = Update.de_json(update_json, bot=application.bot)
     await application.process_update(update)
 
