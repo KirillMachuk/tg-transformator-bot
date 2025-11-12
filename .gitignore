@@ -52,6 +52,9 @@ reports/
 # Temporary
 .vercel
 
+# Node.js
+node_modules/
+
 # Video files
 *.MOV
 *.mov

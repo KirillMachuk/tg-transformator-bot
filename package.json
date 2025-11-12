@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "node --watch api/bot.js",
     "start": "node api/bot.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "upload-video": "node scripts/upload-video.js"
   },
   "dependencies": {
     "dotenv": "^17.2.2",
