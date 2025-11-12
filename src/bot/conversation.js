@@ -88,14 +88,12 @@ async function handleSkillSelection(ctx) {
       ...singleButtonKeyboard(messages.VIDEO_READY_BUTTON)
     });
     // Send video file
-    // Using file_id is more efficient than uploading the file every time
-    // For now, video sending is disabled until file_id is obtained
-    // TODO: Upload video once to Telegram and get file_id, then uncomment:
-    // const { LESSON_VIDEO_FILE_ID } = await import('./constants.js');
-    // if (LESSON_VIDEO_FILE_ID) {
-    //   await ctx.replyWithVideo(LESSON_VIDEO_FILE_ID);
-    // }
-    console.log('[video] Video file not available on Vercel (file is in .gitignore). Upload to Telegram once to get file_id.');
+    const { LESSON_VIDEO_FILE_ID } = await import('./constants.js');
+    if (LESSON_VIDEO_FILE_ID) {
+      await ctx.replyWithVideo(LESSON_VIDEO_FILE_ID);
+    } else {
+      console.log('[video] Video file_id not set in constants.js');
+    }
     return;
   }
 

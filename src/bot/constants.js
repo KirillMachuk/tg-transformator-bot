@@ -21,4 +21,4 @@ export const STATE = {
 
 // Video file_id from Telegram (upload video once and use this ID)
 // To get file_id: upload video to bot, then use getUpdates to see the file_id
-export const LESSON_VIDEO_FILE_ID = null; // Set this after uploading video once
+export const LESSON_VIDEO_FILE_ID = 'BAACAgIAAxkBAAM1aRTMcusnjp-ob01V8J8IcBjsUvEAAheKAAKCraBIYMogzCL0b8o2BA';
