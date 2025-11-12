@@ -151,6 +151,15 @@ async def handle_skill_selection(update: Update, context: Context) -> int:
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=False,
         )
+        # Send video file
+        video_path = Path(__file__).parent.parent / "lesson.MOV"
+        if video_path.exists():
+            with video_path.open("rb") as video_file:
+                await context.bot.send_video(
+                    chat_id=query.message.chat_id,
+                    video=video_file,
+                    filename="lesson.MOV",
+                )
         return ConversationState.VIDEO
 
     await query.message.reply_text(

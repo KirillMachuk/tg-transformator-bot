@@ -51,3 +51,7 @@ reports/
 
 # Temporary
 .vercel
+
+# Video files
+*.MOV
+*.mov
