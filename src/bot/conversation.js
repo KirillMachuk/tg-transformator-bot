@@ -37,7 +37,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const MarkdownExtra = { parse_mode: 'Markdown', disable_web_page_preview: false };
+const MarkdownExtra = { parse_mode: 'HTML', disable_web_page_preview: false };
 
 export function setupConversation(bot) {
   bot.start(handleStartCommand);
@@ -90,12 +90,14 @@ async function handleSkillSelection(ctx) {
     // Send video file
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
+    // Path from src/bot/conversation.js to root/lesson.MOV
     const videoPath = path.join(__dirname, '../../lesson.MOV');
     try {
       await fs.access(videoPath);
       await ctx.replyWithVideo({ source: videoPath });
     } catch (error) {
       console.error('[video] send error', error);
+      console.error('[video] attempted path:', videoPath);
     }
     return;
   }
@@ -161,7 +163,7 @@ async function sendQuestion(ctx, chatId, question, userData) {
 function formatQuestionText(question, userData) {
   const answer = getQuestionAnswerSummary(question, userData);
   if (answer) {
-    return `${question.text}\n\n*Выбрано:*\n${answer}`;
+    return `${question.text}\n\n<b>Выбрано:</b>\n${answer}`;
   }
   return question.text;
 }
@@ -350,7 +352,7 @@ async function handleReportRequest(ctx) {
     if (pdfPath) {
       await ctx.replyWithDocument({ source: pdfPath, filename: pdfPath.split('/').pop() }, {
         caption: messages.REPORT_DELIVERY_MESSAGE,
-        parse_mode: 'Markdown'
+        parse_mode: 'HTML'
       });
       await fs.unlink(pdfPath).catch(() => {});
     } else {
