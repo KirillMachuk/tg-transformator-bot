@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import os
 import tempfile
 from datetime import datetime
@@ -22,10 +23,22 @@ from config import settings
 from bot import utils
 from templates import report_static
 
+logger = logging.getLogger(__name__)
+
 REPORTS_DIR = Path(os.getenv("PDF_OUTPUT_DIR", tempfile.gettempdir())) / "tg_transformator_reports"
 REPORTS_DIR.mkdir(exist_ok=True, parents=True)
 
 DEFAULT_FONT_NAME = "Helvetica"
+
+
+def _prepare_text(text: str) -> str:
+    """Prepare text for PDF: ensure Unicode string and escape HTML."""
+    if isinstance(text, bytes):
+        text = text.decode('utf-8')
+    # Ensure it's a string
+    text = str(text)
+    # Escape HTML but preserve Unicode characters
+    return html.escape(text)
 
 
 def generate_report(
@@ -35,6 +48,18 @@ def generate_report(
 ) -> Path:
     """Generate a PDF report and return its path."""
     font_name = _ensure_font()
+    
+    # Verify font is registered and log details
+    registered_fonts = pdfmetrics.getRegisteredFontNames()
+    if font_name not in registered_fonts and font_name != DEFAULT_FONT_NAME:
+        logger.error(f"Font {font_name} is not registered! Available fonts: {registered_fonts}")
+        font_name = DEFAULT_FONT_NAME
+        logger.warning(f"Falling back to {DEFAULT_FONT_NAME} - Cyrillic will NOT display correctly!")
+    else:
+        logger.info(f"Using font: {font_name} (registered: {font_name in registered_fonts})")
+        if font_name == DEFAULT_FONT_NAME:
+            logger.warning("Using default Helvetica - Cyrillic will NOT display correctly! Set PDF_FONT_PATH in .env")
+    
     styles = _build_styles(font_name)
 
     file_name = _build_file_name(metadata)
@@ -66,19 +91,46 @@ def _ensure_font() -> str:
         if path_obj.exists():
             font_name = path_obj.stem
             try:
-                pdfmetrics.registerFont(TTFont(font_name, str(path_obj)))
+                # Check if font is already registered
+                if font_name not in pdfmetrics.getRegisteredFontNames():
+                    # Register TTFont for Cyrillic support
+                    # Try with subfontIndex=0 first (main Unicode table)
+                    try:
+                        ttf_font = TTFont(font_name, str(path_obj), subfontIndex=0)
+                        pdfmetrics.registerFont(ttf_font)
+                        logger.info(f"Registered font: {font_name} from {font_path} with subfontIndex=0")
+                    except Exception as subfont_error:
+                        # Fallback: try without subfontIndex
+                        logger.warning(f"Failed with subfontIndex=0, trying without: {subfont_error}")
+                        ttf_font = TTFont(font_name, str(path_obj))
+                        pdfmetrics.registerFont(ttf_font)
+                        logger.info(f"Registered font: {font_name} from {font_path} without subfontIndex")
+                    
+                    # Verify registration
+                    if font_name in pdfmetrics.getRegisteredFontNames():
+                        logger.info(f"Font {font_name} successfully registered and verified")
+                    else:
+                        raise RuntimeError(f"Font {font_name} was not registered properly")
+                else:
+                    logger.info(f"Font {font_name} already registered")
                 return font_name
-            except Exception:  # pragma: no cover - fallback on font load error
-                pass
+            except Exception as e:  # pragma: no cover - fallback on font load error
+                logger.error(f"Failed to register font {font_path}: {e}", exc_info=True)
+        else:
+            logger.warning(f"Font file not found: {font_path}")
+    else:
+        logger.warning("PDF_FONT_PATH not set, using default Helvetica (Cyrillic will not display)")
     return DEFAULT_FONT_NAME
 
 
 def _build_styles(font_name: str) -> StyleSheet1:
     styles = getSampleStyleSheet()
+    
+    # Create styles without parent to ensure font is used correctly
+    # This prevents font inheritance issues with Cyrillic fonts
     styles.add(
         ParagraphStyle(
             name="ReportTitle",
-            parent=styles["Title"],
             fontName=font_name,
             fontSize=20,
             leading=26,
@@ -90,7 +142,6 @@ def _build_styles(font_name: str) -> StyleSheet1:
     styles.add(
         ParagraphStyle(
             name="ReportHeading",
-            parent=styles["Heading2"],
             fontName=font_name,
             fontSize=14,
             leading=18,
@@ -102,7 +153,6 @@ def _build_styles(font_name: str) -> StyleSheet1:
     styles.add(
         ParagraphStyle(
             name="ReportBody",
-            parent=styles["BodyText"],
             fontName=font_name,
             fontSize=11,
             leading=15,
@@ -113,7 +163,6 @@ def _build_styles(font_name: str) -> StyleSheet1:
     styles.add(
         ParagraphStyle(
             name="ReportMeta",
-            parent=styles["BodyText"],
             fontName=font_name,
             fontSize=10,
             leading=13,
@@ -121,11 +170,12 @@ def _build_styles(font_name: str) -> StyleSheet1:
             spaceAfter=4,
         )
     )
+    logger.debug(f"Created styles with font: {font_name}")
     return styles
 
 
 def _build_header(story: List[Any], metadata: Dict[str, Any], user_data: Dict[str, Any], styles: StyleSheet1) -> None:
-    story.append(Paragraph(report_static.REPORT_TITLE, styles["ReportTitle"]))
+    story.append(Paragraph(_prepare_text(report_static.REPORT_TITLE), styles["ReportTitle"]))
 
     today = datetime.now().strftime("%d.%m.%Y")
     skill_level = utils.get_skill_level_text(user_data) or "не указан"
@@ -133,8 +183,8 @@ def _build_header(story: List[Any], metadata: Dict[str, Any], user_data: Dict[st
 
     meta_lines = [
         f"Дата: {today}",
-        f"Клиент: {html.escape(client_name)}",
-        f"Уровень компетенций в ИИ: {html.escape(skill_level)}",
+        f"Клиент: {_prepare_text(client_name)}",
+        f"Уровень компетенций в ИИ: {_prepare_text(skill_level)}",
     ]
 
     for line in meta_lines:
@@ -145,7 +195,7 @@ def _build_header(story: List[Any], metadata: Dict[str, Any], user_data: Dict[st
 
 def _build_intro(story: List[Any], styles: StyleSheet1) -> None:
     for paragraph in report_static.INTRO_PARAGRAPHS:
-        story.append(Paragraph(html.escape(paragraph), styles["ReportBody"]))
+        story.append(Paragraph(_prepare_text(paragraph), styles["ReportBody"]))
     story.append(Spacer(1, 10))
 
 
@@ -169,9 +219,9 @@ def _build_dynamic_sections(
 
     _add_section(story, "Кратко о бизнесе", styles)
     if business_summary:
-        story.append(Paragraph(html.escape(business_summary), styles["ReportBody"]))
+        story.append(Paragraph(_prepare_text(business_summary), styles["ReportBody"]))
     else:
-        story.append(Paragraph("Нет данных — заполни анкету подробнее, чтобы получить персональный разбор.", styles["ReportBody"]))
+        story.append(Paragraph(_prepare_text("Нет данных — заполни анкету подробнее, чтобы получить персональный разбор."), styles["ReportBody"]))
 
     _add_section(story, "Приоритетные процессы", styles)
     _add_bullet_list(story, priority_processes, styles)
@@ -201,7 +251,7 @@ def _build_dynamic_sections(
             continue
         story.append(
             Paragraph(
-                f"<b>{html.escape(pair['question'])}</b><br/>{html.escape(answer)}",
+                f"<b>{_prepare_text(pair['question'])}</b><br/>{_prepare_text(answer)}",
                 styles["ReportBody"],
             )
         )
@@ -217,7 +267,7 @@ def _build_static_sections(story: List[Any], styles: StyleSheet1) -> None:
 
 
 def _add_section(story: List[Any], title: str, styles: StyleSheet1) -> None:
-    story.append(Paragraph(html.escape(title), styles["ReportHeading"]))
+    story.append(Paragraph(_prepare_text(title), styles["ReportHeading"]))
 
 
 def _add_bullet_list(story: List[Any], items: Iterable[Any], styles: StyleSheet1) -> None:
@@ -228,7 +278,7 @@ def _add_bullet_list(story: List[Any], items: Iterable[Any], styles: StyleSheet1
 
     bullet_items: List[ListItem] = []
     for item in clean_items:
-        paragraph = Paragraph(html.escape(item), styles["ReportBody"])
+        paragraph = Paragraph(_prepare_text(item), styles["ReportBody"])
         bullet_items.append(ListItem(paragraph, leftIndent=0, bulletColor=colors.HexColor("#1A73E8")))
 
     story.append(
@@ -251,7 +301,7 @@ def _add_numbered_list(story: List[Any], items: Iterable[Any], styles: StyleShee
 
     bullet_items: List[ListItem] = []
     for item in clean_items:
-        paragraph = Paragraph(html.escape(item), styles["ReportBody"])
+        paragraph = Paragraph(_prepare_text(item), styles["ReportBody"])
         bullet_items.append(ListItem(paragraph, leftIndent=0))
 
     story.append(
