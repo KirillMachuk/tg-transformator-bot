@@ -40,11 +40,36 @@ import { fileURLToPath } from 'url';
 const MarkdownExtra = { parse_mode: 'HTML', disable_web_page_preview: false };
 
 // Helper to get user session - prefer ctx.session (from Telegraf middleware) over getUserSession
+// Also sync with global sessionStore for serverless environments
 function getUserData(ctx, chatId) {
+  let userData;
+  
   if (ctx.session) {
-    return ctx.session;
+    userData = ctx.session;
+    // Sync with global store for persistence across requests
+    const globalStore = getUserSession(chatId);
+    // Merge: prefer ctx.session values, but keep global store structure
+    Object.assign(globalStore, userData);
+    return userData;
   }
-  return getUserSession(chatId);
+  
+  // Fallback to global store
+  userData = getUserSession(chatId);
+  // Initialize ctx.session if middleware is available
+  if (ctx.session === undefined) {
+    ctx.session = userData;
+  }
+  return userData;
+}
+
+// Helper to save userData back to both ctx.session and global store
+function saveUserData(ctx, chatId, userData) {
+  if (ctx.session) {
+    Object.assign(ctx.session, userData);
+  }
+  // Also save to global store for serverless persistence
+  const globalStore = getUserSession(chatId);
+  Object.assign(globalStore, userData);
 }
 
 export function setupConversation(bot) {
@@ -169,6 +194,8 @@ async function sendQuestion(ctx, chatId, question, userData) {
   if (!question.options && question.expectsText) {
     userData[AWAITING_TEXT_KEY] = question.id;
     console.log(`[conversation] Set AWAITING_TEXT_KEY for question: ${question.id}`);
+    // Explicitly save to both session and global store
+    saveUserData(ctx, chatId, userData);
   } else {
     console.log(`[conversation] Question ${question.id} - hasOptions: ${!!question.options}, expectsText: ${question.expectsText}`);
   }
@@ -248,6 +275,7 @@ async function handleQuestionCallback(ctx) {
 
   if (question.multiSelect) {
     toggleMultiOption(userData, question, option);
+    saveUserData(ctx, chatId, userData);
     const selectedKeys = new Set(getSelectedOptionKeys(userData, question.id));
     const keyboard = questionOptionsKeyboard(question, selectedKeys);
     const summary = formatQuestionText(question, userData);
@@ -262,6 +290,7 @@ async function handleQuestionCallback(ctx) {
   }
 
   recordSingleAnswer(userData, question.id, option.text);
+  saveUserData(ctx, chatId, userData);
   return sendNextQuestion(ctx, chatId);
 }
 
@@ -283,6 +312,7 @@ async function handleTextMessage(ctx) {
     if (awaitingOther.multiSelect) {
       appendCustomAnswer(userData, question.id, awaitingOther.optionText || '✍️ Другое', text);
       delete userData[AWAITING_OTHER_KEY];
+      saveUserData(ctx, chatId, userData);
       const keyboard = questionOptionsKeyboard(question, new Set(getSelectedOptionKeys(userData, question.id)));
       const summary = formatQuestionText(question, userData);
       const msgRef = getCurrentQuestionMessage(userData);
@@ -297,16 +327,26 @@ async function handleTextMessage(ctx) {
 
     recordSingleAnswer(userData, question.id, text);
     delete userData[AWAITING_OTHER_KEY];
+    saveUserData(ctx, chatId, userData);
     return sendNextQuestion(ctx, chatId);
   }
 
   const awaitingTextId = userData[AWAITING_TEXT_KEY];
+  console.log(`[conversation] Checking AWAITING_TEXT_KEY. Value: ${awaitingTextId}, userData keys:`, Object.keys(userData));
+  console.log(`[conversation] ctx.session exists:`, !!ctx.session);
+  if (ctx.session) {
+    console.log(`[conversation] ctx.session keys:`, Object.keys(ctx.session));
+    console.log(`[conversation] ctx.session[AWAITING_TEXT_KEY]:`, ctx.session[AWAITING_TEXT_KEY]);
+  }
+  
   if (awaitingTextId) {
     const question = getQuestionById(awaitingTextId);
     if (question) {
       console.log(`[conversation] Processing text answer for question: ${question.id}`);
       recordSingleAnswer(userData, question.id, text);
       delete userData[AWAITING_TEXT_KEY];
+      // Explicitly save to both session and global store
+      saveUserData(ctx, chatId, userData);
       return sendNextQuestion(ctx, chatId);
     } else {
       console.log(`[conversation] Question not found for awaitingTextId: ${awaitingTextId}`);
