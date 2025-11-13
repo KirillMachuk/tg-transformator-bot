@@ -44,8 +44,8 @@ export async function analyzeAnswers(payload) {
     const response = await client.responses.create({
       model: settings.openaiModel,
       input: [
-        { role: 'system', content: [{ type: 'input_text', input_text: ANALYSIS_SYSTEM_PROMPT }] },
-        { role: 'user', content: [{ type: 'input_text', input_text: requestPayload }] }
+        { role: 'system', content: [{ type: 'input_text', text: ANALYSIS_SYSTEM_PROMPT }] },
+        { role: 'user', content: [{ type: 'input_text', text: requestPayload }] }
       ],
       temperature: 0.2
     });
@@ -71,8 +71,8 @@ export async function generateChatReply(payload) {
     const response = await client.responses.create({
       model: settings.openaiModel,
       input: [
-        { role: 'system', content: [{ type: 'input_text', input_text: CHAT_SYSTEM_PROMPT }] },
-        { role: 'user', content: [{ type: 'input_text', input_text: requestPayload }] }
+        { role: 'system', content: [{ type: 'input_text', text: CHAT_SYSTEM_PROMPT }] },
+        { role: 'user', content: [{ type: 'input_text', text: requestPayload }] }
       ],
       temperature: 0.35
     });
