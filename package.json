@@ -8,7 +8,8 @@
     "dev": "node --watch api/bot.js",
     "start": "node api/bot.js",
     "lint": "eslint .",
-    "upload-video": "node scripts/upload-video.js"
+    "upload-video": "node scripts/upload-video.js",
+    "get-video-id": "node scripts/get-video-id.js"
   },
   "dependencies": {
     "dotenv": "^17.2.2",

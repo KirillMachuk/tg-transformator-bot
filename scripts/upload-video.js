@@ -9,15 +9,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const adminChatId = process.env.ADMIN_CHAT_ID; // Your Telegram user ID
+const adminChatId = process.env.ADMIN_CHAT_ID || '169506026'; // Kiryl's Telegram ID
 
 if (!token) {
   console.error('TELEGRAM_BOT_TOKEN is not set');
-  process.exit(1);
-}
-
-if (!adminChatId) {
-  console.error('ADMIN_CHAT_ID is not set. Set your Telegram user ID in .env');
   process.exit(1);
 }
 
