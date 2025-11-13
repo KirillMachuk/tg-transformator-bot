@@ -147,6 +147,9 @@ async function sendQuestion(ctx, chatId, question, userData) {
 
   if (!question.options && question.expectsText) {
     userData[AWAITING_TEXT_KEY] = question.id;
+    console.log(`[conversation] Set AWAITING_TEXT_KEY for question: ${question.id}`);
+  } else {
+    console.log(`[conversation] Question ${question.id} - hasOptions: ${!!question.options}, expectsText: ${question.expectsText}`);
   }
 
   const message = await ctx.telegram.sendMessage(chatId, formatQuestionText(question, userData), {
@@ -280,13 +283,20 @@ async function handleTextMessage(ctx) {
   if (awaitingTextId) {
     const question = getQuestionById(awaitingTextId);
     if (question) {
+      console.log(`[conversation] Processing text answer for question: ${question.id}`);
       recordSingleAnswer(userData, question.id, text);
       delete userData[AWAITING_TEXT_KEY];
       return sendNextQuestion(ctx, chatId);
+    } else {
+      console.log(`[conversation] Question not found for awaitingTextId: ${awaitingTextId}`);
     }
+  } else {
+    console.log(`[conversation] No AWAITING_TEXT_KEY found. userData keys:`, Object.keys(userData));
+    console.log(`[conversation] REPORT_READY_KEY:`, userData[REPORT_READY_KEY]);
   }
 
   if (!userData[REPORT_READY_KEY]) {
+    console.log(`[conversation] Sending PRE_CHAT_REMINDER - user hasn't completed questionnaire`);
     await ctx.reply(messages.PRE_CHAT_REMINDER);
     return;
   }
