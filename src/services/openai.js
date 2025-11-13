@@ -44,8 +44,8 @@ export async function analyzeAnswers(payload) {
     const response = await client.responses.create({
       model: settings.openaiModel,
       input: [
-        { role: 'system', content: [{ type: 'text', text: ANALYSIS_SYSTEM_PROMPT }] },
-        { role: 'user', content: [{ type: 'text', text: requestPayload }] }
+        { role: 'system', content: [{ type: 'input_text', input_text: ANALYSIS_SYSTEM_PROMPT }] },
+        { role: 'user', content: [{ type: 'input_text', input_text: requestPayload }] }
       ],
       temperature: 0.2
     });
@@ -71,8 +71,8 @@ export async function generateChatReply(payload) {
     const response = await client.responses.create({
       model: settings.openaiModel,
       input: [
-        { role: 'system', content: [{ type: 'text', text: CHAT_SYSTEM_PROMPT }] },
-        { role: 'user', content: [{ type: 'text', text: requestPayload }] }
+        { role: 'system', content: [{ type: 'input_text', input_text: CHAT_SYSTEM_PROMPT }] },
+        { role: 'user', content: [{ type: 'input_text', input_text: requestPayload }] }
       ],
       temperature: 0.35
     });
@@ -96,11 +96,23 @@ function buildChatPayload(data) {
 
 function extractText(response) {
   if (!response) return '';
+  
+  // Try output_text first (new format)
   if (response.output_text) return response.output_text;
+  
+  // Try output array (new format with output_text type)
   if (Array.isArray(response.output)) {
     for (const item of response.output) {
+      // Check for output_text type
+      if (item?.type === 'output_text' && item?.output_text) {
+        return item.output_text;
+      }
+      // Fallback to old format
       if (Array.isArray(item?.content)) {
         for (const part of item.content) {
+          if (part?.type === 'output_text' && part?.output_text) {
+            return part.output_text;
+          }
           if (typeof part?.text === 'string' && part.text.trim()) {
             return part.text;
           }
@@ -108,6 +120,7 @@ function extractText(response) {
       }
     }
   }
+  
   return '';
 }
 

@@ -81,8 +81,8 @@ def analyze_answers(payload: Dict[str, Any]) -> Dict[str, Any]:
         response = client.responses.create(
             model=settings.openai_model,
             input=[
-                {"role": "system", "content": [{"type": "text", "text": ANALYSIS_SYSTEM_PROMPT}]},
-                {"role": "user", "content": [{"type": "text", "text": request_payload}]},
+                {"role": "system", "content": [{"type": "input_text", "input_text": ANALYSIS_SYSTEM_PROMPT}]},
+                {"role": "user", "content": [{"type": "input_text", "input_text": request_payload}]},
             ],
             temperature=0.2,
         )
@@ -117,8 +117,8 @@ def generate_chat_reply(payload: Dict[str, Any]) -> str:
         response = client.responses.create(
             model=settings.openai_model,
             input=[
-                {"role": "system", "content": [{"type": "text", "text": CHAT_SYSTEM_PROMPT}]},
-                {"role": "user", "content": [{"type": "text", "text": request_payload}]},
+                {"role": "system", "content": [{"type": "input_text", "input_text": CHAT_SYSTEM_PROMPT}]},
+                {"role": "user", "content": [{"type": "input_text", "input_text": request_payload}]},
             ],
             temperature=0.35,
         )

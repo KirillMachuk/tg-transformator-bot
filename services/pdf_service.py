@@ -33,12 +33,35 @@ DEFAULT_FONT_NAME = "Helvetica"
 
 def _prepare_text(text: str) -> str:
     """Prepare text for PDF: ensure Unicode string and escape HTML."""
+    if text is None:
+        return ""
+    
     if isinstance(text, bytes):
-        text = text.decode('utf-8')
+        try:
+            text = text.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                text = text.decode('latin-1')
+            except UnicodeDecodeError:
+                text = text.decode('utf-8', errors='replace')
+    
     # Ensure it's a string
     text = str(text)
+    
+    # Verify it's actually Unicode (not already encoded)
+    try:
+        text.encode('utf-8').decode('utf-8')
+    except Exception:
+        logger.warning(f"Text encoding issue detected: {text[:50]}")
+    
     # Escape HTML but preserve Unicode characters
-    return html.escape(text)
+    escaped = html.escape(text)
+    
+    # Log if we have Cyrillic characters
+    if any('\u0400' <= char <= '\u04FF' for char in text):
+        logger.debug(f"Prepared text with Cyrillic: {text[:30]}...")
+    
+    return escaped
 
 
 def generate_report(
@@ -47,20 +70,33 @@ def generate_report(
     analysis: Dict[str, Any],
 ) -> Path:
     """Generate a PDF report and return its path."""
+    logger.info("=" * 60)
+    logger.info("Starting PDF generation with Cyrillic support")
+    logger.info("=" * 60)
+    
     font_name = _ensure_font()
     
     # Verify font is registered and log details
     registered_fonts = pdfmetrics.getRegisteredFontNames()
+    logger.info(f"Registered fonts: {registered_fonts}")
+    
     if font_name not in registered_fonts and font_name != DEFAULT_FONT_NAME:
         logger.error(f"Font {font_name} is not registered! Available fonts: {registered_fonts}")
         font_name = DEFAULT_FONT_NAME
         logger.warning(f"Falling back to {DEFAULT_FONT_NAME} - Cyrillic will NOT display correctly!")
     else:
-        logger.info(f"Using font: {font_name} (registered: {font_name in registered_fonts})")
+        logger.info(f"✓ Using font: {font_name} (registered: {font_name in registered_fonts})")
         if font_name == DEFAULT_FONT_NAME:
-            logger.warning("Using default Helvetica - Cyrillic will NOT display correctly! Set PDF_FONT_PATH in .env")
+            logger.warning("⚠ Using default Helvetica - Cyrillic will NOT display correctly! Set PDF_FONT_PATH in .env")
+        else:
+            logger.info(f"✓ Font {font_name} is ready for Cyrillic text")
     
     styles = _build_styles(font_name)
+    
+    # Test Cyrillic rendering
+    test_text = "Тест кириллицы: Привет, мир!"
+    logger.debug(f"Test Cyrillic text: {test_text}")
+    logger.debug(f"Test text encoding: {test_text.encode('utf-8')}")
 
     file_name = _build_file_name(metadata)
     file_path = REPORTS_DIR / file_name
@@ -72,6 +108,8 @@ def generate_report(
         rightMargin=18 * mm,
         topMargin=20 * mm,
         bottomMargin=20 * mm,
+        # Ensure fonts are embedded in PDF for proper display
+        embedFonts=True,
     )
 
     story: List[Any] = []
@@ -85,92 +123,136 @@ def generate_report(
 
 
 def _ensure_font() -> str:
+    """Register and return font name for Cyrillic support."""
     font_path = getattr(settings, "pdf_font_path", "").strip()
+    
+    # Remove quotes if present (from .env)
+    if font_path.startswith('"') and font_path.endswith('"'):
+        font_path = font_path[1:-1]
+    if font_path.startswith("'") and font_path.endswith("'"):
+        font_path = font_path[1:-1]
+    
     if font_path:
+        # Try absolute path first, then relative
         path_obj = Path(font_path)
+        if not path_obj.is_absolute():
+            # Try relative to project root
+            project_root = Path(__file__).parent.parent
+            path_obj = project_root / font_path
+        
         if path_obj.exists():
             font_name = path_obj.stem
+            logger.info(f"Attempting to register font: {font_name} from {path_obj}")
+            
             try:
                 # Check if font is already registered
                 if font_name not in pdfmetrics.getRegisteredFontNames():
                     # Register TTFont for Cyrillic support
-                    # Try with subfontIndex=0 first (main Unicode table)
+                    # Method 1: Try with subfontIndex=0 (main Unicode table)
+                    registered = False
                     try:
                         ttf_font = TTFont(font_name, str(path_obj), subfontIndex=0)
                         pdfmetrics.registerFont(ttf_font)
-                        logger.info(f"Registered font: {font_name} from {font_path} with subfontIndex=0")
+                        logger.info(f"✓ Registered font: {font_name} with subfontIndex=0")
+                        registered = True
                     except Exception as subfont_error:
-                        # Fallback: try without subfontIndex
-                        logger.warning(f"Failed with subfontIndex=0, trying without: {subfont_error}")
-                        ttf_font = TTFont(font_name, str(path_obj))
-                        pdfmetrics.registerFont(ttf_font)
-                        logger.info(f"Registered font: {font_name} from {font_path} without subfontIndex")
+                        logger.warning(f"Method 1 failed (subfontIndex=0): {subfont_error}")
+                        
+                        # Method 2: Try without subfontIndex
+                        try:
+                            ttf_font = TTFont(font_name, str(path_obj))
+                            pdfmetrics.registerFont(ttf_font)
+                            logger.info(f"✓ Registered font: {font_name} without subfontIndex")
+                            registered = True
+                        except Exception as no_subfont_error:
+                            logger.error(f"Method 2 also failed: {no_subfont_error}")
                     
                     # Verify registration
-                    if font_name in pdfmetrics.getRegisteredFontNames():
-                        logger.info(f"Font {font_name} successfully registered and verified")
+                    if registered and font_name in pdfmetrics.getRegisteredFontNames():
+                        logger.info(f"✓ Font {font_name} successfully registered and verified")
+                        # Test with a Cyrillic character
+                        try:
+                            test_font = pdfmetrics.getFont(font_name)
+                            logger.info(f"✓ Font object retrieved: {type(test_font)}")
+                        except Exception as test_error:
+                            logger.warning(f"Could not retrieve font object: {test_error}")
                     else:
                         raise RuntimeError(f"Font {font_name} was not registered properly")
                 else:
                     logger.info(f"Font {font_name} already registered")
+                
                 return font_name
-            except Exception as e:  # pragma: no cover - fallback on font load error
-                logger.error(f"Failed to register font {font_path}: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Failed to register font {path_obj}: {e}", exc_info=True)
         else:
-            logger.warning(f"Font file not found: {font_path}")
+            logger.error(f"Font file not found: {path_obj} (resolved from: {font_path})")
     else:
-        logger.warning("PDF_FONT_PATH not set, using default Helvetica (Cyrillic will not display)")
+        logger.warning("PDF_FONT_PATH not set, using default Helvetica (Cyrillic will NOT display)")
+    
     return DEFAULT_FONT_NAME
 
 
 def _build_styles(font_name: str) -> StyleSheet1:
+    """Build paragraph styles with the specified font."""
     styles = getSampleStyleSheet()
+    
+    # Verify font is available before using it
+    registered_fonts = pdfmetrics.getRegisteredFontNames()
+    if font_name not in registered_fonts:
+        logger.error(f"Font {font_name} not in registered fonts: {registered_fonts}")
+        logger.warning(f"Falling back to Helvetica - Cyrillic will NOT display!")
+        font_name = DEFAULT_FONT_NAME
     
     # Create styles without parent to ensure font is used correctly
     # This prevents font inheritance issues with Cyrillic fonts
-    styles.add(
-        ParagraphStyle(
-            name="ReportTitle",
-            fontName=font_name,
-            fontSize=20,
-            leading=26,
-            alignment=TA_LEFT,
-            textColor=colors.HexColor("#1F1F1F"),
-            spaceAfter=12,
-        )
-    )
-    styles.add(
-        ParagraphStyle(
-            name="ReportHeading",
-            fontName=font_name,
-            fontSize=14,
-            leading=18,
-            textColor=colors.HexColor("#1A73E8"),
-            spaceBefore=16,
-            spaceAfter=8,
-        )
-    )
-    styles.add(
-        ParagraphStyle(
-            name="ReportBody",
-            fontName=font_name,
-            fontSize=11,
-            leading=15,
-            textColor=colors.HexColor("#202124"),
-            spaceAfter=6,
-        )
-    )
-    styles.add(
-        ParagraphStyle(
-            name="ReportMeta",
-            fontName=font_name,
-            fontSize=10,
-            leading=13,
-            textColor=colors.HexColor("#5F6368"),
-            spaceAfter=4,
-        )
-    )
-    logger.debug(f"Created styles with font: {font_name}")
+    style_configs = [
+        {
+            "name": "ReportTitle",
+            "fontName": font_name,
+            "fontSize": 20,
+            "leading": 26,
+            "alignment": TA_LEFT,
+            "textColor": colors.HexColor("#1F1F1F"),
+            "spaceAfter": 12,
+        },
+        {
+            "name": "ReportHeading",
+            "fontName": font_name,
+            "fontSize": 14,
+            "leading": 18,
+            "textColor": colors.HexColor("#1A73E8"),
+            "spaceBefore": 16,
+            "spaceAfter": 8,
+        },
+        {
+            "name": "ReportBody",
+            "fontName": font_name,
+            "fontSize": 11,
+            "leading": 15,
+            "textColor": colors.HexColor("#202124"),
+            "spaceAfter": 6,
+        },
+        {
+            "name": "ReportMeta",
+            "fontName": font_name,
+            "fontSize": 10,
+            "leading": 13,
+            "textColor": colors.HexColor("#5F6368"),
+            "spaceAfter": 4,
+        },
+    ]
+    
+    for config in style_configs:
+        try:
+            styles.add(ParagraphStyle(**config))
+            logger.debug(f"Created style {config['name']} with font {font_name}")
+        except Exception as e:
+            logger.error(f"Failed to create style {config['name']}: {e}")
+            # Fallback to default font
+            config["fontName"] = DEFAULT_FONT_NAME
+            styles.add(ParagraphStyle(**config))
+    
+    logger.info(f"All styles created with font: {font_name}")
     return styles
 
 

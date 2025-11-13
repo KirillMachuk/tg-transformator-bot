@@ -23,7 +23,12 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
+    # Set DEBUG level for detailed PDF font logging
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 
 def _log(message: str, payload: Any | None = None, *, stream=sys.stderr) -> None:
     text = f"[webhook] {message}" if payload is None else f"[webhook] {message}: {payload}"
