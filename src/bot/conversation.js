@@ -84,8 +84,7 @@ async function handleSkillSelection(ctx) {
   if (choice === messages.SKILL_LEVEL_OPTIONS[0][0] || choice === messages.SKILL_LEVEL_OPTIONS[1][0]) {
     userData.state = STATE.VIDEO;
     await ctx.reply(messages.VIDEO_MESSAGE, {
-      ...MarkdownExtra,
-      ...singleButtonKeyboard(messages.VIDEO_READY_BUTTON)
+      ...MarkdownExtra
     });
     // Send video file
     const { LESSON_VIDEO_FILE_ID } = await import('./constants.js');
@@ -94,6 +93,11 @@ async function handleSkillSelection(ctx) {
     } else {
       console.log('[video] Video file_id not set in constants.js');
     }
+    // Send message with button after video
+    await ctx.reply(messages.VIDEO_READY_MESSAGE, {
+      ...MarkdownExtra,
+      ...singleButtonKeyboard(messages.VIDEO_READY_BUTTON)
+    });
     return;
   }
 
