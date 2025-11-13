@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Telegraf } from 'telegraf';
+import { Telegraf, session } from 'telegraf';
 import settings from '../src/config/settings.js';
 import { setupConversation } from '../src/bot/conversation.js';
 
@@ -10,6 +10,20 @@ if (!token) {
 }
 
 const bot = new Telegraf(token);
+
+// Use session middleware to persist user data across requests
+// This uses memory store which works within the same process
+bot.use(session({
+  defaultSession: () => ({
+    answers: {},
+    question_index: 0,
+    report_ready: false,
+    diagnosis_complete: false,
+    sheets_saved: false,
+    chat_history: []
+  })
+}));
+
 setupConversation(bot);
 
 export default async function handler(req, res) {

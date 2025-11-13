@@ -13,7 +13,17 @@ import {
 import { getAllQuestions } from './questions.js';
 import { SKILL_LEVEL_OPTIONS } from './messages.js';
 
-const sessionStore = new Map();
+// Use global session store that persists across requests in the same process
+// On Vercel, this will work within the same function instance
+let sessionStore;
+if (typeof global !== 'undefined' && global.sessionStore) {
+  sessionStore = global.sessionStore;
+} else {
+  sessionStore = new Map();
+  if (typeof global !== 'undefined') {
+    global.sessionStore = sessionStore;
+  }
+}
 
 export function resetUserSession(chatId) {
   const userData = {

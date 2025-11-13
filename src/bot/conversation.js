@@ -39,12 +39,20 @@ import { fileURLToPath } from 'url';
 
 const MarkdownExtra = { parse_mode: 'HTML', disable_web_page_preview: false };
 
+// Helper to get user session - prefer ctx.session (from Telegraf middleware) over getUserSession
+function getUserData(ctx, chatId) {
+  if (ctx.session) {
+    return ctx.session;
+  }
+  return getUserSession(chatId);
+}
+
 export function setupConversation(bot) {
   bot.start(handleStartCommand);
 
   bot.action(messages.START_BUTTON[0], async (ctx) => {
     await ctx.answerCbQuery();
-    const userData = getUserSession(ctx.chat.id);
+    const userData = getUserData(ctx, ctx.chat.id);
     userData.state = STATE.SKILL_LEVEL;
     await ctx.reply(messages.SKILL_LEVEL_PROMPT, {
       ...MarkdownExtra,
@@ -63,7 +71,16 @@ export function setupConversation(bot) {
 
 async function handleStartCommand(ctx) {
   const chatId = ctx.chat.id;
-  const userData = resetUserSession(chatId);
+  const userData = getUserData(ctx, chatId);
+  resetUserSession(chatId); // Reset to initial state
+  Object.assign(userData, {
+    answers: {},
+    question_index: 0,
+    report_ready: false,
+    diagnosis_complete: false,
+    sheets_saved: false,
+    chat_history: []
+  });
   userData.state = STATE.WELCOME;
 
   await ctx.reply(messages.WELCOME_TEXT, {
@@ -74,7 +91,7 @@ async function handleStartCommand(ctx) {
 
 async function handleSkillSelection(ctx) {
   const chatId = ctx.chat.id;
-  const userData = getUserSession(chatId);
+  const userData = getUserData(ctx, chatId);
   userData.state = STATE.SKILL_LEVEL;
 
   const choice = ctx.callbackQuery.data;
@@ -115,7 +132,7 @@ async function handleVideoConfirmation(ctx) {
 }
 
 async function startDiagnosisFlow(ctx, chatId, isNew = false) {
-  const userData = getUserSession(chatId);
+  const userData = getUserData(ctx, chatId);
   userData.state = STATE.DIAGNOSIS;
 
   if (isNew) {
@@ -126,7 +143,7 @@ async function startDiagnosisFlow(ctx, chatId, isNew = false) {
 }
 
 async function sendNextQuestion(ctx, chatId, { isNew = false } = {}) {
-  const userData = getUserSession(chatId);
+  const userData = getUserData(ctx, chatId);
 
   const question = isNew ? getCurrentQuestion(userData) : advanceQuestion(userData);
   if (!question) {
@@ -137,6 +154,10 @@ async function sendNextQuestion(ctx, chatId, { isNew = false } = {}) {
 }
 
 async function sendQuestion(ctx, chatId, question, userData) {
+  // Ensure we have the latest session data
+  if (!userData) {
+    userData = getUserData(ctx, chatId);
+  }
   delete userData[AWAITING_TEXT_KEY];
   delete userData[AWAITING_OTHER_KEY];
 
@@ -198,7 +219,7 @@ async function handleQuestionCallback(ctx) {
   await ctx.answerCbQuery();
 
   const chatId = ctx.chat.id;
-  const userData = getUserSession(chatId);
+  const userData = getUserData(ctx, chatId);
   const [_, questionId, payload] = ctx.callbackQuery.data.split('|');
   const question = getQuestionById(questionId);
   if (!question) {
@@ -246,7 +267,7 @@ async function handleQuestionCallback(ctx) {
 
 async function handleTextMessage(ctx) {
   const chatId = ctx.chat.id;
-  const userData = getUserSession(chatId);
+  const userData = getUserData(ctx, chatId);
   const text = ctx.message.text?.trim() || '';
 
   // Handle awaited "other" input
@@ -306,7 +327,7 @@ async function handleTextMessage(ctx) {
 
 async function handleNonTextMessage(ctx) {
   if (ctx.message?.text) return; // already handled in text handler
-  const userData = getUserSession(ctx.chat.id);
+  const userData = getUserData(ctx, ctx.chat.id);
   if (!userData[REPORT_READY_KEY]) {
     await ctx.reply(messages.PRE_CHAT_REMINDER);
     return;
@@ -315,7 +336,7 @@ async function handleNonTextMessage(ctx) {
 }
 
 async function handleQuestionnaireComplete(ctx, chatId) {
-  const userData = getUserSession(chatId);
+  const userData = getUserData(ctx, chatId);
   userData[DIAGNOSIS_COMPLETE_KEY] = true;
   userData.state = STATE.REPORT;
 
@@ -331,7 +352,7 @@ async function handleQuestionnaireComplete(ctx, chatId) {
 
 async function handleReportRequest(ctx) {
   const chatId = ctx.chat.id;
-  const userData = getUserSession(chatId);
+  const userData = getUserData(ctx, chatId);
   await ctx.answerCbQuery();
 
   if (!userData[DIAGNOSIS_COMPLETE_KEY]) {
