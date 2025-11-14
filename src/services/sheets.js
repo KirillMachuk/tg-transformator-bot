@@ -29,6 +29,10 @@ function buildPayload(metadata, userData) {
     answer: item.answer
   }));
 
+  // Include analysis if available
+  const analysis = userData.analysis || null;
+  const analysisJson = analysis ? JSON.stringify(analysis) : '';
+
   return {
     meta: {
       timestamp,
@@ -38,7 +42,8 @@ function buildPayload(metadata, userData) {
       skill_level: metadata.skill_level || ''
     },
     answers_by_id: answersById,
-    answers
+    answers,
+    analysis: analysisJson
   };
 }
 
@@ -102,6 +107,9 @@ function buildRow(payload) {
   for (const pair of pairs) {
     row.push(pair.answer || '');
   }
+
+  // Add analysis as last column (JSON string)
+  row.push(payload.analysis || '');
   return row;
 }
 

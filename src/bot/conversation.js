@@ -30,7 +30,7 @@ import {
   getChatHistory
 } from './utils.js';
 import { skillLevelKeyboard, startKeyboard, questionOptionsKeyboard, singleButtonKeyboard, consultationKeyboard } from './keyboards.js';
-import { analyzeAnswers, generateChatReply } from '../services/openai.js';
+import { analyzeAnswers, generateChatReply, createContextSummary } from '../services/openai.js';
 import { generateReport } from '../services/pdf.js';
 import { storeAnswers } from '../services/sheets.js';
 import fs from 'fs/promises';
@@ -404,15 +404,6 @@ async function handleReportRequest(ctx) {
   metadata.skill_level = getSkillLevelText(userData);
   metadata.timestamp = new Date().toISOString();
 
-  if (!userData[SHEETS_SAVED_KEY]) {
-    try {
-      await storeAnswers(metadata, userData);
-      userData[SHEETS_SAVED_KEY] = true;
-    } catch (error) {
-      console.error('[sheets] store error', error);
-    }
-  }
-
   const snapshot = JSON.parse(JSON.stringify(userData));
   const analysisPayload = buildAnalysisPayload(snapshot);
   const analysis = await analyzeAnswers(analysisPayload);
@@ -438,6 +429,20 @@ async function handleReportRequest(ctx) {
   userData.analysisPayload = analysisPayload;
   userData.answersSnapshot = snapshot;
 
+  // Save updated session data to Redis
+  saveUserData(ctx, chatId, userData);
+
+  // Save to Sheets with analysis included
+  if (!userData[SHEETS_SAVED_KEY]) {
+    try {
+      await storeAnswers(metadata, userData);
+      userData[SHEETS_SAVED_KEY] = true;
+      saveUserData(ctx, chatId, userData);
+    } catch (error) {
+      console.error('[sheets] store error', error);
+    }
+  }
+
   const followUpKeyboard = consultationKeyboard();
   if (followUpKeyboard) {
     await ctx.reply(messages.POST_REPORT_MESSAGE, {
@@ -457,11 +462,32 @@ async function handleChatMessage(ctx, userMessage, userData) {
   }
 
   appendChatHistory(userData, 'user', message);
+  
+  // Create context summary if it doesn't exist and context is large
+  if (!userData.context_summary && userData.analysis) {
+    const chatId = ctx.chat.id;
+    const fullContext = {
+      analysis: userData.analysis,
+      answers: buildQuestionAnswerPairs(userData),
+      answers_by_id: collectAllAnswers(userData),
+      skill_level: getSkillLevelText(userData)
+    };
+    
+    const summary = await createContextSummary(fullContext);
+    if (summary) {
+      userData.context_summary = summary;
+      saveUserData(ctx, chatId, userData);
+      console.log('[conversation] Created and saved context summary');
+    }
+  }
+  
   const payload = buildChatPayload(userData, message);
   const reply = await generateChatReply(payload);
 
   if (reply) {
     appendChatHistory(userData, 'assistant', reply);
+    const chatId = ctx.chat.id;
+    saveUserData(ctx, chatId, userData);
     await ctx.reply(reply);
   } else {
     await ctx.reply(messages.CHAT_FALLBACK_MESSAGE);
@@ -491,7 +517,18 @@ function buildChatPayload(userData, userMessage) {
   const analysis = userData.analysis || {};
   const analysisPayload = userData.analysisPayload || {};
   const history = getChatHistory(userData);
+  const contextSummary = userData.context_summary || null;
 
+  // If we have a summary, use it; otherwise use full data
+  if (contextSummary) {
+    return {
+      context_summary: contextSummary,
+      history,
+      user_message: userMessage
+    };
+  }
+
+  // Full context (will be used if summary doesn't exist)
   return {
     analysis,
     answers: analysisPayload.answers || buildQuestionAnswerPairs(userData),
