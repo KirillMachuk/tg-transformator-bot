@@ -84,10 +84,19 @@ def analyze_answers(payload: Dict[str, Any]) -> Dict[str, Any]:
                 {"role": "system", "content": [{"type": "input_text", "text": ANALYSIS_SYSTEM_PROMPT}]},
                 {"role": "user", "content": [{"type": "input_text", "text": request_payload}]},
             ],
-            temperature=0.2,
+            reasoning={"effort": "medium"},
+            verbosity="low",
         )
     except Exception as exc:  # pragma: no cover - external service
-        logger.error("OpenAI API error: %s", exc)
+        logger.error(
+            "OpenAI API error in analyze_answers: %s",
+            exc,
+            exc_info=True,
+            extra={
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            },
+        )
         return DEFAULT_ANALYSIS.copy()
 
     output_text = getattr(response, "output_text", None) or _extract_text(response)
@@ -120,13 +129,25 @@ def generate_chat_reply(payload: Dict[str, Any]) -> str:
                 {"role": "system", "content": [{"type": "input_text", "text": CHAT_SYSTEM_PROMPT}]},
                 {"role": "user", "content": [{"type": "input_text", "text": request_payload}]},
             ],
-            temperature=0.35,
+            reasoning={"effort": "medium"},
+            verbosity="low",
         )
     except Exception as exc:  # pragma: no cover - external service
-        logger.error("OpenAI chat error: %s", exc)
+        logger.error(
+            "OpenAI chat error in generate_chat_reply: %s",
+            exc,
+            exc_info=True,
+            extra={
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            },
+        )
         return ""
 
     output_text = getattr(response, "output_text", None) or _extract_text(response)
+    if not output_text:
+        logger.error("OpenAI chat response did not contain text output.")
+        return ""
     return output_text.strip()
 
 

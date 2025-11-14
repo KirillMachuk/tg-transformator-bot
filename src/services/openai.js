@@ -49,14 +49,25 @@ export async function analyzeAnswers(payload) {
         { role: 'system', content: [{ type: 'input_text', text: ANALYSIS_SYSTEM_PROMPT }] },
         { role: 'user', content: [{ type: 'input_text', text: requestPayload }] }
       ],
-      temperature: 0.2
+      reasoning: {
+        effort: 'medium'
+      },
+      verbosity: 'low'
     });
 
     const text = extractText(response);
     if (!text) return { ...DEFAULT_ANALYSIS };
     return mergeWithDefault(JSON.parse(text));
   } catch (error) {
-    console.error('[openai] analyzeAnswers error', error);
+    console.error('[openai] analyzeAnswers error', {
+      message: error?.message,
+      status: error?.status,
+      type: error?.type,
+      param: error?.param,
+      code: error?.code,
+      error: error?.error,
+      stack: error?.stack
+    });
     return { ...DEFAULT_ANALYSIS };
   }
 }
@@ -76,12 +87,23 @@ export async function generateChatReply(payload) {
         { role: 'system', content: [{ type: 'input_text', text: CHAT_SYSTEM_PROMPT }] },
         { role: 'user', content: [{ type: 'input_text', text: requestPayload }] }
       ],
-      temperature: 0.35
+      reasoning: {
+        effort: 'medium'
+      },
+      verbosity: 'low'
     });
 
     return extractText(response).trim();
   } catch (error) {
-    console.error('[openai] chat error', error);
+    console.error('[openai] chat error', {
+      message: error?.message,
+      status: error?.status,
+      type: error?.type,
+      param: error?.param,
+      code: error?.code,
+      error: error?.error,
+      stack: error?.stack
+    });
     return '';
   }
 }
@@ -127,14 +149,25 @@ export async function createContextSummary(data) {
         { role: 'system', content: [{ type: 'input_text', text: SUMMARY_SYSTEM_PROMPT }] },
         { role: 'user', content: [{ type: 'input_text', text: summaryPrompt }] }
       ],
-      temperature: 0.2
+      reasoning: {
+        effort: 'medium'
+      },
+      verbosity: 'low'
     });
 
     const summary = extractText(response).trim();
     console.log(`[openai] Created context summary: ${summary.length} chars (original: ${serialized.length} chars)`);
     return summary;
   } catch (error) {
-    console.error('[openai] createContextSummary error', error);
+    console.error('[openai] createContextSummary error', {
+      message: error?.message,
+      status: error?.status,
+      type: error?.type,
+      param: error?.param,
+      code: error?.code,
+      error: error?.error,
+      stack: error?.stack
+    });
     return '';
   }
 }
