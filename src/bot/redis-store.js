@@ -1,4 +1,7 @@
-import kv from '@vercel/kv';
+// Import @vercel/kv - will fail at module load time if not installed
+// This is expected in local dev, but should be installed in Vercel
+import kvModule from '@vercel/kv';
+const kv = kvModule;
 
 /**
  * Redis-based session store for Telegraf using Vercel KV
@@ -13,22 +16,25 @@ class RedisStore {
     try {
       const hasUrl = !!process.env.KV_REST_API_URL;
       const hasToken = !!process.env.KV_REST_API_TOKEN;
+      const hasKvModule = kv !== null;
       
       console.log('[redis-store] Initialization check:', {
         hasUrl,
         hasToken,
+        hasKvModule,
         urlPreview: process.env.KV_REST_API_URL ? `${process.env.KV_REST_API_URL.substring(0, 30)}...` : 'missing',
         tokenPreview: process.env.KV_REST_API_TOKEN ? `${process.env.KV_REST_API_TOKEN.substring(0, 10)}...` : 'missing'
       });
       
-      if (hasUrl && hasToken) {
+      if (hasUrl && hasToken && hasKvModule) {
         this.useRedis = true;
         console.log('[redis-store] ✓ Using Vercel KV for sessions');
       } else {
         console.log('[redis-store] ⚠ KV not configured, using memory store (fallback)');
         console.log('[redis-store] Missing:', {
           url: !hasUrl,
-          token: !hasToken
+          token: !hasToken,
+          module: !hasKvModule
         });
       }
     } catch (error) {
@@ -37,7 +43,7 @@ class RedisStore {
   }
 
   async get(key) {
-    if (this.useRedis) {
+    if (this.useRedis && kv) {
       try {
         const data = await kv.get(key);
         return data || null;
@@ -51,7 +57,7 @@ class RedisStore {
   }
 
   async set(key, value) {
-    if (this.useRedis) {
+    if (this.useRedis && kv) {
       try {
         // Set with expiration (30 days)
         await kv.set(key, value, { ex: 60 * 60 * 24 * 30 });
@@ -65,7 +71,7 @@ class RedisStore {
   }
 
   async delete(key) {
-    if (this.useRedis) {
+    if (this.useRedis && kv) {
       try {
         await kv.del(key);
         return;
