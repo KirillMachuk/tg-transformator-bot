@@ -4,5 +4,8 @@
     "api/bot.js": {
       "runtime": "nodejs20.x"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/bot", "destination": "/api/bot.js" }
+  ]
 }
