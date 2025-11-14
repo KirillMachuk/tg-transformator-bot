@@ -48,6 +48,11 @@ Telegram-бот агентства [1ma.ai](https://1ma.ai), который пр
    | `PDF_FONT_PATH` | (опционально) путь к TTF-шрифту с поддержкой кириллицы (например, DejaVuSans.ttf) |
    | `CONSULTATION_URL` | Ссылка на страницу бронирования консультации |
    | `WEBHOOK_URL` | Публичный URL вашего вебхука `https://<project>.vercel.app/api/webhook` |
+   | `KV_REST_API_URL` | URL Upstash Redis REST API (для production на Vercel) |
+   | `KV_REST_API_TOKEN` | Токен Upstash Redis REST API (для production на Vercel) |
+   | `KV_REST_API_READ_ONLY_TOKEN` | (опционально) Read-only токен Upstash Redis |
+   | `KV_URL` | (опционально) Redis URL для прямого подключения |
+   | `REDIS_URL` | (опционально) Альтернативный Redis URL |
 
 3. **Google Apps Script Web App**
    - Откройте [Google Apps Script](https://script.google.com/), создайте проект и вставьте скрипт из раздела «Пример Apps Script» ниже (или используйте свой вариант).
@@ -92,11 +97,24 @@ Telegram-бот агентства [1ma.ai](https://1ma.ai), который пр
 
 1. **Подготовьте GitHub-репозиторий** и загрузите код (Vercel подтягивает изменения из Git).
 2. **Создайте новый проект в Vercel**, укажите корень репозитория.
-3. **В разделе Environment Variables** добавьте значения из `.env` (минимум: `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `GAS_ENDPOINT`, `GOOGLE_SHEET_ID`, `WEBHOOK_URL`).
-4. После деплоя возьмите домен вида `https://<project>.vercel.app` и обновите `WEBHOOK_URL`.
-5. Выполните `python scripts/set_webhook.py set --url https://<project>.vercel.app/api/webhook`.
+3. **Настройте Upstash Redis для сессий**
+   - В Vercel Dashboard перейдите в **Storage** → **Create Database**
+   - Выберите **Upstash** из Marketplace (или используйте существующий Upstash из другого проекта)
+   - После создания скопируйте переменные окружения:
+     - `KV_REST_API_URL`
+     - `KV_REST_API_TOKEN`
+     - `KV_REST_API_READ_ONLY_TOKEN` (опционально)
+     - `KV_URL` (опционально)
+     - `REDIS_URL` (опционально)
+   - Добавьте эти переменные в **Settings → Environment Variables** вашего проекта
+   - **Примечание:** Можно переиспользовать существующий Upstash из другого проекта (например, Widget). Ключи сессий не конфликтуют: бот использует `session:${chatId}`, Widget использует `chat:${sessionId}`
+4. **В разделе Environment Variables** добавьте остальные значения из `.env` (минимум: `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `GAS_ENDPOINT`, `GOOGLE_SHEET_ID`, `WEBHOOK_URL`, `PDF_FONT_PATH`).
+5. После деплоя возьмите домен вида `https://<project>.vercel.app` и обновите `WEBHOOK_URL`.
+6. Выполните `python scripts/set_webhook.py set --url https://<project>.vercel.app/api/webhook`.
 
-> **Важно:** укажите `TELEGRAM_SECRET_TOKEN` в Vercel и при установке вебхука, чтобы Telegram подписывал запросы.
+> **Важно:** 
+> - Укажите `TELEGRAM_SECRET_TOKEN` в Vercel и при установке вебхука, чтобы Telegram подписывал запросы.
+> - Без настроенного Upstash Redis сессии бота не будут сохраняться между запросами в serverless-окружении Vercel.
 
 ## Как обновить содержимое
 - **Видео в обучающем блоке:** замените текст `(ссылка на видео)` в `bot/messages.py` на реальный URL (Telegram поддерживает предпросмотр YouTube/Vimeo).
