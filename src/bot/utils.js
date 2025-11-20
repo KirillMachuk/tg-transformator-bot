@@ -198,7 +198,7 @@ export function stripMarkdown(text) {
 
 export function appendChatHistory(userData, role, message, limit = 12) {
   const history = userData[CHAT_HISTORY_KEY] || (userData[CHAT_HISTORY_KEY] = []);
-  history.push({ role, message });
+  history.push({ role, message, content: message, ts: Date.now() });
   if (history.length > limit) {
     history.splice(0, history.length - limit);
   }

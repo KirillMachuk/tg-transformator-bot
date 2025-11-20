@@ -6,6 +6,7 @@ const ANALYSIS_SYSTEM_PROMPT = 'Ты — консалтинг-эксперт и�
 const CHAT_SYSTEM_PROMPT = 'Ты — персональный AI-консультант агентства 1ma.ai. Ты уже провёл диагностику бизнеса клиента и подготовил ему отчёт. Сейчас клиент задаёт уточняющие вопросы, поэтому опирайся на ранее сделанные выводы и конкретику из отчёта. Отвечай дружелюбно, подробно, с практическими рекомендациями. Не придумывай данных, если их нет — говори об этом. Всегда предлагай следующий шаг и упоминай, как ИИ можно применить в реальных процессах.';
 
 const SUMMARY_SYSTEM_PROMPT = 'Ты — помощник для создания краткого резюме контекста. Создай сжатую выжимку из вопросов, ответов и анализа, сохраняя ключевую информацию для контекста чата. Отвечай только текстом, без JSON.';
+const MAX_OUTPUT_TOKENS = 700; // keep answers concise but practical
 
 const ANALYSIS_USER_PROMPT = `Проанализируй ответы клиента и подготовь рекомендации по внедрению ИИ.
 Ты должен вернуть JSON-объект со следующей строгой структурой:
@@ -34,6 +35,20 @@ const DEFAULT_ANALYSIS = {
 
 const client = settings.openaiApiKey ? new OpenAI({ apiKey: settings.openaiApiKey }) : null;
 
+function buildResponseRequest(systemPrompt, userPayload, overrides = {}) {
+  return {
+    model: settings.openaiModel,
+    input: [
+      { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
+      { role: 'user', content: [{ type: 'input_text', text: userPayload }] }
+    ],
+    max_output_tokens: MAX_OUTPUT_TOKENS,
+    reasoning: { effort: 'medium' },
+    verbosity: 'medium',
+    ...overrides
+  };
+}
+
 export async function analyzeAnswers(payload) {
   if (!client) {
     console.error('[openai] OPENAI_API_KEY is not configured');
@@ -43,17 +58,9 @@ export async function analyzeAnswers(payload) {
   const requestPayload = buildAnalysisPayload(payload);
 
   try {
-    const response = await client.responses.create({
-      model: settings.openaiModel,
-      input: [
-        { role: 'system', content: [{ type: 'input_text', text: ANALYSIS_SYSTEM_PROMPT }] },
-        { role: 'user', content: [{ type: 'input_text', text: requestPayload }] }
-      ],
-      reasoning: {
-        effort: 'medium'
-      },
-      verbosity: 'low'
-    });
+    const response = await client.responses.create(
+      buildResponseRequest(ANALYSIS_SYSTEM_PROMPT, requestPayload, { max_output_tokens: 800 })
+    );
 
     const text = extractText(response);
     if (!text) return { ...DEFAULT_ANALYSIS };
@@ -81,19 +88,12 @@ export async function generateChatReply(payload) {
   const requestPayload = buildChatPayload(payload);
 
   try {
-    const response = await client.responses.create({
-      model: settings.openaiModel,
-      input: [
-        { role: 'system', content: [{ type: 'input_text', text: CHAT_SYSTEM_PROMPT }] },
-        { role: 'user', content: [{ type: 'input_text', text: requestPayload }] }
-      ],
-      reasoning: {
-        effort: 'medium'
-      },
-      verbosity: 'low'
-    });
+    const response = await client.responses.create(
+      buildResponseRequest(CHAT_SYSTEM_PROMPT, requestPayload)
+    );
 
-    return extractText(response).trim();
+    const text = extractText(response)?.trim?.();
+    return text || '';
   } catch (error) {
     console.error('[openai] chat error', {
       message: error?.message,
@@ -143,17 +143,9 @@ export async function createContextSummary(data) {
   const summaryPrompt = `${SUMMARY_SYSTEM_PROMPT}\n\nСоздай краткую выжимку из следующего контекста, сохраняя ключевую информацию:\n\n${serialized}`;
 
   try {
-    const response = await client.responses.create({
-      model: settings.openaiModel,
-      input: [
-        { role: 'system', content: [{ type: 'input_text', text: SUMMARY_SYSTEM_PROMPT }] },
-        { role: 'user', content: [{ type: 'input_text', text: summaryPrompt }] }
-      ],
-      reasoning: {
-        effort: 'medium'
-      },
-      verbosity: 'low'
-    });
+    const response = await client.responses.create(
+      buildResponseRequest(SUMMARY_SYSTEM_PROMPT, summaryPrompt, { max_output_tokens: 400 })
+    );
 
     const summary = extractText(response).trim();
     console.log(`[openai] Created context summary: ${summary.length} chars (original: ${serialized.length} chars)`);
@@ -172,12 +164,35 @@ export async function createContextSummary(data) {
   }
 }
 
+function serializeHistory(history = [], limit = 10) {
+  const recent = history.slice(-limit);
+  return recent
+    .map((msg) => `${msg.role}: ${msg.content || msg.message || ''}`.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function formatAnalysisForChat(analysis = {}) {
+  const sections = [
+    ['Кратко о бизнесе', analysis.business_summary],
+    ['Приоритетные процессы', (analysis.priority_processes || []).join('; ')],
+    ['Возможности для внедрения ИИ', (analysis.ai_opportunities || []).join('; ')],
+    ['Быстрые победы', (analysis.quick_wins || []).join('; ')],
+    ['Долгосрочные инициативы', (analysis.long_term || []).join('; ')],
+    ['Следующие шаги', (analysis.next_steps || []).join('; ')],
+    ['Рекомендуемые инструменты', (analysis.recommended_tools || []).join('; ')],
+    ['Готовые промпты для GPT', (analysis.gpt_prompts || []).join('; ')]
+  ];
+
+  return sections
+    .map(([title, value]) => `${title}: ${value || '—'}`)
+    .join('\n');
+}
+
 function buildChatPayload(data) {
   // If summary exists, use it; otherwise use full data
   if (data.context_summary) {
-    const history = data.history || [];
-    const recentHistory = history.slice(-10); // Last 10 messages
-    const historyText = recentHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n');
+    const historyText = serializeHistory(data.history);
     
     return `Используй эту выжимку контекста и историю диалога, чтобы ответить клиенту на его вопрос. Сформулируй ответ полностью на русском языке, без JSON, в виде нескольких абзацев и маркеров при необходимости.
 
@@ -192,31 +207,45 @@ ${historyText || 'Нет истории'}
 
   // Use full data if no summary
   const serialized = JSON.stringify(data, null, 2);
-  return 'Используй эти данные, чтобы ответить клиенту на его вопрос. Сформулируй ответ полностью на русском языке, без JSON, в виде нескольких абзацев и маркеров при необходимости.\n\n' + serialized;
+  const historyText = serializeHistory(data.history);
+  const analysisText = formatAnalysisForChat(data.analysis);
+
+  return `Контекст клиента (ответы анкеты, анализ и выдержки из PDF):
+${analysisText}
+
+Ответы по вопросам (id -> ответ):
+${JSON.stringify(data.answers_by_id || {}, null, 2)}
+
+История диалога:
+${historyText || 'Нет истории'}
+
+Текстовая копия данных:
+${serialized}
+
+Вопрос клиента: ${data.user_message || ''}`;
 }
 
 function extractText(response) {
   if (!response) return '';
-  
-  // Try output_text first (new format)
-  if (response.output_text) return response.output_text;
-  
-  // Try output array (new format with output_text type)
+
+  // Responses API v2: top-level output_text shortcut
+  if (typeof response.output_text === 'string' && response.output_text.trim()) {
+    return response.output_text;
+  }
+
+  // Responses API: output array with typed blocks
   if (Array.isArray(response.output)) {
     for (const item of response.output) {
-      // Check for output_text type
-      if (item?.type === 'output_text' && item?.output_text) {
+      if (typeof item?.output_text === 'string' && item.output_text.trim()) {
         return item.output_text;
       }
-      // Fallback to old format
-      if (Array.isArray(item?.content)) {
-        for (const part of item.content) {
-          if (part?.type === 'output_text' && part?.output_text) {
-            return part.output_text;
-          }
-          if (typeof part?.text === 'string' && part.text.trim()) {
-            return part.text;
-          }
+      const content = Array.isArray(item?.content) ? item.content : [];
+      for (const part of content) {
+        if (typeof part?.output_text === 'string' && part.output_text.trim()) {
+          return part.output_text;
+        }
+        if (typeof part?.text === 'string' && part.text.trim()) {
+          return part.text;
         }
       }
     }
