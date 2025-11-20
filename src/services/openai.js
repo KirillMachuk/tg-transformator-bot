@@ -44,7 +44,7 @@ function buildResponseRequest(systemPrompt, userPayload, overrides = {}) {
     ],
     max_output_tokens: MAX_OUTPUT_TOKENS,
     reasoning: { effort: 'medium' },
-    verbosity: 'medium',
+    text: { verbosity: 'medium' },
     ...overrides
   };
 }
