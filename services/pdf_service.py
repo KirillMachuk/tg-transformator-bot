@@ -31,37 +31,165 @@ REPORTS_DIR.mkdir(exist_ok=True, parents=True)
 DEFAULT_FONT_NAME = "Helvetica"
 
 
-def _prepare_text(text: str) -> str:
-    """Prepare text for PDF: ensure Unicode string and escape HTML."""
+def _fix_encoding(text: str) -> str:
+    """
+    Detect and fix incorrectly decoded text.
+    Common issue: Windows-1251 (CP1251) text read as Latin-1.
+    Returns normalized UTF-8 string without HTML escaping.
+    """
+    if not text or not isinstance(text, str):
+        return text
+    
+    # Check if text looks like incorrectly decoded Cyrillic (Windows-1251 read as Latin-1)
+    # Windows-1251 Cyrillic characters when read as Latin-1 produce specific byte patterns
+    # We detect this by checking for common patterns that shouldn't appear in valid UTF-8 text
+    
+    # If text contains characters that look like mojibake (garbled text from encoding issues)
+    # Try to fix by re-encoding as Latin-1 and decoding as Windows-1251
+    try:
+        # Check if text has suspicious patterns (common in mojibake)
+        suspicious_patterns = [
+            'Aô', 'ACä', 'CD>', 'Cd=', 'C¤', 'BC', 'CÔ', 'CD@',  # Common mojibake patterns
+            'D$', 'Cä', 'CT=', 'CD0', 'Dd8', 'Dô', 'E D4',  # More patterns
+        ]
+        
+        has_suspicious = any(pattern in text for pattern in suspicious_patterns)
+        
+        # Also check if text has Latin-1 characters that are common in Windows-1251 mojibake
+        # but no actual Cyrillic characters
+        has_latin1_mojibake = False
+        has_cyrillic = any('\u0400' <= char <= '\u04FF' for char in text)
+        
+        if not has_cyrillic and text:
+            # Check if text contains characters in the range that suggests mojibake
+            # Windows-1251 Cyrillic (0x80-0xFF) when read as Latin-1 produces these
+            latin1_range_chars = sum(1 for char in text if ord(char) >= 0x80 and ord(char) <= 0xFF)
+            if latin1_range_chars > len(text) * 0.3:  # More than 30% of chars in suspicious range
+                has_latin1_mojibake = True
+        
+        if has_suspicious or has_latin1_mojibake:
+            # Try to fix: re-encode as Latin-1 (which preserves byte values) then decode as Windows-1251
+            try:
+                fixed = text.encode('latin-1').decode('windows-1251')
+                # Verify the fix worked by checking for Cyrillic
+                if any('\u0400' <= char <= '\u04FF' for char in fixed):
+                    logger.info(f"Fixed encoding issue: '{text[:50]}...' -> '{fixed[:50]}...'")
+                    return fixed
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
+            
+            # Try CP1251 explicitly
+            try:
+                fixed = text.encode('latin-1').decode('cp1251')
+                if any('\u0400' <= char <= '\u04FF' for char in fixed):
+                    logger.info(f"Fixed encoding issue (cp1251): '{text[:50]}...' -> '{fixed[:50]}...'")
+                    return fixed
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
+        
+    except Exception as e:
+        logger.debug(f"Encoding fix attempt failed: {e}")
+    
+    return text
+
+
+def _normalize_text_encoding(text: str) -> str:
+    """
+    Normalize text encoding to UTF-8 without HTML escaping.
+    This is used for data normalization before HTML escaping.
+    """
     if text is None:
         return ""
     
+    # Handle bytes input
     if isinstance(text, bytes):
         try:
             text = text.decode('utf-8')
         except UnicodeDecodeError:
             try:
-                text = text.decode('latin-1')
+                text = text.decode('windows-1251')
             except UnicodeDecodeError:
-                text = text.decode('utf-8', errors='replace')
+                try:
+                    text = text.decode('latin-1')
+                except UnicodeDecodeError:
+                    text = text.decode('utf-8', errors='replace')
+                    logger.warning(f"Used 'replace' error handling for bytes input")
     
     # Ensure it's a string
     text = str(text)
     
-    # Verify it's actually Unicode (not already encoded)
+    # Fix encoding issues (Windows-1251 read as Latin-1, etc.)
+    text = _fix_encoding(text)
+    
+    # Verify it's valid UTF-8
     try:
         text.encode('utf-8').decode('utf-8')
-    except Exception:
-        logger.warning(f"Text encoding issue detected: {text[:50]}")
+    except Exception as e:
+        logger.warning(f"Text encoding validation failed: {e}, text preview: {text[:50]}")
+        # Try to salvage by replacing problematic characters
+        try:
+            text = text.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+        except Exception:
+            pass
+    
+    return text
+
+
+def _prepare_text(text: str) -> str:
+    """Prepare text for PDF: normalize encoding and escape HTML for ReportLab Paragraph."""
+    if text is None:
+        return ""
+    
+    # First normalize encoding (handles bytes, fixes mojibake, ensures UTF-8)
+    text = _normalize_text_encoding(text)
     
     # Escape HTML but preserve Unicode characters
     escaped = html.escape(text)
     
-    # Log if we have Cyrillic characters
+    # Log if we have Cyrillic characters (for debugging)
     if any('\u0400' <= char <= '\u04FF' for char in text):
-        logger.debug(f"Prepared text with Cyrillic: {text[:30]}...")
+        logger.debug(f"Prepared text with Cyrillic ({len(text)} chars): {text[:50]}...")
     
     return escaped
+
+
+def _normalize_analysis_data(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize encoding for all fields in analysis dictionary (without HTML escaping)."""
+    if not analysis:
+        return analysis
+    
+    normalized = {}
+    for key, value in analysis.items():
+        if isinstance(value, str):
+            # Normalize encoding only, no HTML escaping (that happens in _prepare_text)
+            normalized[key] = _normalize_text_encoding(value)
+        elif isinstance(value, list):
+            # Normalize each item in the list
+            normalized[key] = [_normalize_text_encoding(item) if isinstance(item, str) else item for item in value]
+        elif isinstance(value, dict):
+            # Recursively normalize nested dictionaries
+            normalized[key] = _normalize_analysis_data(value)
+        else:
+            normalized[key] = value
+    
+    logger.debug(f"Normalized analysis data with keys: {list(normalized.keys())}")
+    return normalized
+
+
+def _normalize_user_data_text_fields(user_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize encoding for text fields in user_data that will be used in PDF.
+    Note: This doesn't modify the original dict - normalization happens via _prepare_text().
+    """
+    if not user_data:
+        return user_data
+    
+    # Log that we're processing user_data
+    logger.debug(f"Processing user_data with {len(user_data)} keys")
+    
+    # Actual normalization happens in _prepare_text() when text is accessed
+    # This function is mainly for documentation/logging
+    return user_data
 
 
 def generate_report(
@@ -112,10 +240,14 @@ def generate_report(
         embedFonts=True,
     )
 
+    # Normalize encoding for all analysis data before using it
+    normalized_analysis = _normalize_analysis_data(analysis)
+    logger.info(f"Normalized analysis data: {len(normalized_analysis)} fields")
+    
     story: List[Any] = []
     _build_header(story, metadata, user_data, styles)
     _build_intro(story, styles)
-    _build_dynamic_sections(story, user_data, analysis, styles)
+    _build_dynamic_sections(story, user_data, normalized_analysis, styles)
     _build_static_sections(story, styles)
 
     doc.build(story)
@@ -290,6 +422,8 @@ def _build_dynamic_sections(
     answers_map = utils.collect_all_answers(user_data)
     pairs = utils.build_question_answer_pairs(user_data)
 
+    # All analysis data is already normalized by _normalize_analysis_data()
+    # but we still need to prepare text for HTML escaping in Paragraph
     business_summary = analysis.get("business_summary", "")
     priority_processes = analysis.get("priority_processes", [])
     ai_opportunities = analysis.get("ai_opportunities", [])
@@ -298,6 +432,10 @@ def _build_dynamic_sections(
     next_steps = analysis.get("next_steps", [])
     recommended_tools = analysis.get("recommended_tools", [])
     gpt_prompts = analysis.get("gpt_prompts", [])
+    
+    # Log analysis data summary for debugging
+    logger.debug(f"Building dynamic sections with analysis fields: business_summary={bool(business_summary)}, "
+                 f"priority_processes={len(priority_processes)}, quick_wins={len(quick_wins)}")
 
     _add_section(story, "Кратко о бизнесе", styles)
     if business_summary:

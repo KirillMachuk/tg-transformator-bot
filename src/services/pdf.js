@@ -1,21 +1,34 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
 import settings from '../config/settings.js';
 import { getSkillLevelText, buildQuestionAnswerPairs } from '../bot/utils.js';
 import reportStatic from '../templates/reportStatic.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 function registerFont(doc) {
-  const fontPath = (settings.pdfFontPath || '').trim();
-  if (fontPath && fs.existsSync(fontPath)) {
+  const envFontPath = (settings.pdfFontPath || '').trim();
+  const candidatePaths = [envFontPath]
+    .filter(Boolean)
+    .concat([
+      path.resolve(process.cwd(), 'fonts', 'DejaVuSans.ttf'),
+      path.resolve(__dirname, '../../fonts/DejaVuSans.ttf')
+    ]);
+
+  for (const candidate of candidatePaths) {
+    if (!fs.existsSync(candidate)) continue;
+
     try {
-      doc.registerFont('CustomFont', fontPath);
+      doc.registerFont('CustomFont', candidate);
       return 'CustomFont';
     } catch (error) {
-      console.warn('[pdf] failed to register custom font', error);
+      console.warn('[pdf] failed to register font', { candidate, error });
     }
   }
+
   return 'Helvetica';
 }
 
