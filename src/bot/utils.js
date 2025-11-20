@@ -125,6 +125,20 @@ export function getQuestionById(questionId) {
   return getAllQuestionSequence().find((q) => q.id === questionId) || null;
 }
 
+export function getQuestionProgress(userData) {
+  const questions = getAllQuestionSequence();
+  const totalQuestions = questions.length;
+  const currentIndex = userData[QUESTION_INDEX_KEY] ?? 0;
+  const currentNumber = currentIndex + 1; // 1-based для отображения
+  const percent = totalQuestions > 0 ? Math.round((currentNumber / totalQuestions) * 100) : 0;
+  
+  return {
+    current: currentNumber,
+    total: totalQuestions,
+    percent
+  };
+}
+
 export function getSkillLevelText(userData) {
   const skillKey = userData[SKILL_LEVEL_KEY];
   for (const [key, text] of SKILL_LEVEL_OPTIONS) {

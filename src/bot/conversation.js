@@ -27,7 +27,8 @@ import {
   buildQuestionAnswerPairs,
   collectAllAnswers,
   appendChatHistory,
-  getChatHistory
+  getChatHistory,
+  getQuestionProgress
 } from './utils.js';
 import { skillLevelKeyboard, startKeyboard, questionOptionsKeyboard, singleButtonKeyboard, consultationKeyboard } from './keyboards.js';
 import { analyzeAnswers, generateChatReply, createContextSummary } from '../services/openai.js';
@@ -211,11 +212,14 @@ async function sendQuestion(ctx, chatId, question, userData) {
 }
 
 function formatQuestionText(question, userData) {
+  const progress = getQuestionProgress(userData);
+  const progressText = `📊 Вопрос ${progress.current} из ${progress.total} (${progress.percent}%)`;
+  
   const answer = getQuestionAnswerSummary(question, userData);
   if (answer) {
-    return `${question.text}\n\n<b>Выбрано:</b>\n${answer}`;
+    return `${progressText}\n\n${question.text}\n\n<b>Выбрано:</b>\n${answer}`;
   }
-  return question.text;
+  return `${progressText}\n\n${question.text}`;
 }
 
 function getQuestionAnswerSummary(question, userData) {
