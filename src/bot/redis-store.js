@@ -9,7 +9,7 @@ async function ensureKV() {
   
   kvImportPromise = import('@vercel/kv')
     .then((module) => {
-      kv = module.default;
+      kv = module.kv;
       console.log('[redis-store] ✓ @vercel/kv imported successfully');
       return kv;
     })
