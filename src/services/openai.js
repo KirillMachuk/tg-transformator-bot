@@ -9,18 +9,28 @@ const SUMMARY_SYSTEM_PROMPT = 'Ты — помощник для создания
 const MAX_OUTPUT_TOKENS = 700; // keep answers concise but practical
 
 const ANALYSIS_USER_PROMPT = `Проанализируй ответы клиента и подготовь рекомендации по внедрению ИИ.
-Ты должен вернуть JSON-объект со следующей строгой структурой:
+Ты ДОЛЖЕН вернуть ТОЛЬКО валидный JSON-объект, без дополнительного текста до или после.
+Используй следующую СТРОГУЮ структуру:
 {
   "business_summary": "краткое описание бизнеса и текущей ситуации",
-  "priority_processes": ["ключевой процесс 1", "ключевой процесс 2", ...],
-  "ai_opportunities": ["основная возможность 1", "основная возможность 2", ...],
-  "quick_wins": ["быстрый результат 1", ...],
-  "long_term": ["долгосрочная инициатива 1", ...],
-  "next_steps": ["шаг 1", "шаг 2", ...],
-  "recommended_tools": ["инструмент или интеграция 1", ...],
-  "gpt_prompts": ["пример запроса для GPT 1", ...]
+  "priority_processes": ["ключевой процесс 1", "ключевой процесс 2"],
+  "ai_opportunities": ["основная возможность 1", "основная возможность 2"],
+  "quick_wins": ["быстрый результат 1"],
+  "long_term": ["долгосрочная инициатива 1"],
+  "next_steps": ["шаг 1", "шаг 2"],
+  "recommended_tools": ["инструмент или интеграция 1"],
+  "gpt_prompts": ["пример запроса для GPT 1"]
 }
-Формулируй пункты с учётом отрасли клиента, его целей и масштаба. Учитывай уровень компетенций клиента в ИИ. Не добавляй никакого текста вне JSON. Не используй переносы строк внутри элементов, чтобы каждый пункт помещался в одну строку.`;
+
+КРИТИЧЕСКИ ВАЖНО:
+- Возвращай ТОЛЬКО валидный JSON
+- Все строки должны быть правильно экранированы
+- Не используй переносы строк внутри значений
+- Закрывай все кавычки
+- Не добавляй никакого текста до или после JSON
+- Проверь что JSON валиден перед отправкой
+
+Формулируй пункты с учётом отрасли клиента, его целей и масштаба.`;
 
 const DEFAULT_ANALYSIS = {
   business_summary: '',
@@ -34,6 +44,58 @@ const DEFAULT_ANALYSIS = {
 };
 
 const client = settings.openaiApiKey ? new OpenAI({ apiKey: settings.openaiApiKey }) : null;
+
+/**
+ * Safely parse JSON with error handling and repair attempts
+ * @param {string} text - The text to parse as JSON
+ * @returns {Object|null} Parsed JSON object or null if parsing fails
+ */
+function safeJsonParse(text) {
+  if (!text || typeof text !== 'string') return null;
+  
+  // Try direct parsing first
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // Direct parsing failed, try to repair
+  }
+  
+  // Try to extract JSON from markdown code blocks
+  const jsonBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (jsonBlockMatch) {
+    try {
+      return JSON.parse(jsonBlockMatch[1]);
+    } catch (e) {
+      // Continue to other repair attempts
+    }
+  }
+  
+  // Try to find JSON object boundaries
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      // Try to repair common JSON errors
+      let repaired = jsonMatch[0];
+      
+      // Fix unterminated strings by closing them
+      repaired = repaired.replace(/("[^"]*$)/m, '$1"');
+      
+      // Remove trailing commas
+      repaired = repaired.replace(/,(\s*[}\]])/g, '$1');
+      
+      // Try parsing the repaired JSON
+      try {
+        return JSON.parse(repaired);
+      } catch (e) {
+        console.error('[openai] JSON repair failed:', e.message);
+      }
+    }
+  }
+  
+  return null;
+}
 
 function buildResponseRequest(systemPrompt, userPayload, overrides = {}) {
   return {
@@ -63,8 +125,20 @@ export async function analyzeAnswers(payload) {
     );
 
     const text = extractText(response);
-    if (!text) return { ...DEFAULT_ANALYSIS };
-    return mergeWithDefault(JSON.parse(text));
+    if (!text) {
+      console.error('[openai] No text extracted from response');
+      return { ...DEFAULT_ANALYSIS };
+    }
+    
+    // Try to parse the JSON with error handling and repair
+    const parsed = safeJsonParse(text);
+    if (!parsed) {
+      console.error('[openai] Failed to parse JSON response. Raw text:', text.substring(0, 500));
+      return { ...DEFAULT_ANALYSIS };
+    }
+    
+    console.log('[openai] Successfully parsed analysis response');
+    return mergeWithDefault(parsed);
   } catch (error) {
     console.error('[openai] analyzeAnswers error', {
       message: error?.message,
