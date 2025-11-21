@@ -160,23 +160,70 @@ export async function generateChatReply(payload) {
   }
 
   const requestPayload = buildChatPayload(payload);
+  const payloadSize = requestPayload?.length || 0;
+  const estimatedTokens = estimateTokens(requestPayload);
+  
+  console.log('[openai] generateChatReply: Starting request', {
+    payloadSize,
+    estimatedTokens,
+    hasContextSummary: !!payload?.context_summary,
+    hasAnalysis: !!payload?.analysis,
+    hasHistory: Array.isArray(payload?.history) && payload.history.length > 0,
+    userMessage: payload?.user_message?.substring(0, 100) || 'no message'
+  });
 
   try {
-    const response = await client.responses.create(
-      buildResponseRequest(CHAT_SYSTEM_PROMPT, requestPayload)
-    );
+    const requestConfig = buildResponseRequest(CHAT_SYSTEM_PROMPT, requestPayload);
+    console.log('[openai] generateChatReply: Request config', {
+      model: requestConfig.model,
+      maxOutputTokens: requestConfig.max_output_tokens,
+      inputLength: requestConfig.input?.length || 0
+    });
+
+    const response = await client.responses.create(requestConfig);
+
+    console.log('[openai] generateChatReply: Received response', {
+      hasResponse: !!response,
+      responseType: typeof response,
+      responseKeys: response ? Object.keys(response) : [],
+      hasOutputText: typeof response?.output_text === 'string',
+      hasOutputArray: Array.isArray(response?.output),
+      outputArrayLength: Array.isArray(response?.output) ? response.output.length : 0
+    });
+
+    // Log full response structure for debugging (truncated if too large)
+    if (response) {
+      const responseStr = JSON.stringify(response);
+      if (responseStr.length > 1000) {
+        console.log('[openai] generateChatReply: Response structure (truncated)', responseStr.substring(0, 1000) + '...');
+      } else {
+        console.log('[openai] generateChatReply: Full response structure', response);
+      }
+    }
 
     const text = extractText(response)?.trim?.();
+    
+    console.log('[openai] generateChatReply: Extracted text', {
+      hasText: !!text,
+      textLength: text?.length || 0,
+      textPreview: text ? text.substring(0, 200) : 'no text'
+    });
+
+    if (!text) {
+      console.error('[openai] generateChatReply: No text extracted from response');
+    }
+
     return text || '';
   } catch (error) {
-    console.error('[openai] chat error', {
+    console.error('[openai] generateChatReply: Error occurred', {
       message: error?.message,
       status: error?.status,
       type: error?.type,
       param: error?.param,
       code: error?.code,
       error: error?.error,
-      stack: error?.stack
+      stack: error?.stack,
+      response: error?.response ? JSON.stringify(error.response).substring(0, 500) : undefined
     });
     return '';
   }
@@ -264,11 +311,23 @@ function formatAnalysisForChat(analysis = {}) {
 }
 
 function buildChatPayload(data) {
+  console.log('[openai] buildChatPayload: Building payload', {
+    hasData: !!data,
+    hasContextSummary: !!data?.context_summary,
+    hasAnalysis: !!data?.analysis,
+    hasAnswers: !!data?.answers,
+    hasAnswersById: !!data?.answers_by_id,
+    hasHistory: Array.isArray(data?.history),
+    historyLength: Array.isArray(data?.history) ? data.history.length : 0,
+    hasUserMessage: !!data?.user_message,
+    userMessageLength: data?.user_message?.length || 0,
+    dataKeys: data ? Object.keys(data) : []
+  });
+
   // If summary exists, use it; otherwise use full data
   if (data.context_summary) {
     const historyText = serializeHistory(data.history);
-    
-    return `Используй эту выжимку контекста и историю диалога, чтобы ответить клиенту на его вопрос. Сформулируй ответ полностью на русском языке, без JSON, в виде нескольких абзацев и маркеров при необходимости.
+    const payload = `Используй эту выжимку контекста и историю диалога, чтобы ответить клиенту на его вопрос. Сформулируй ответ полностью на русском языке, без JSON, в виде нескольких абзацев и маркеров при необходимости.
 
 Выжимка контекста:
 ${data.context_summary}
@@ -277,6 +336,17 @@ ${data.context_summary}
 ${historyText || 'Нет истории'}
 
 Вопрос клиента: ${data.user_message || ''}`;
+
+    const payloadSize = payload.length;
+    const estimatedTokens = estimateTokens(payload);
+    console.log('[openai] buildChatPayload: Created payload with summary', {
+      payloadSize,
+      estimatedTokens,
+      contextSummaryLength: data.context_summary?.length || 0,
+      historyTextLength: historyText?.length || 0
+    });
+
+    return payload;
   }
 
   // Use full data if no summary
@@ -284,7 +354,7 @@ ${historyText || 'Нет истории'}
   const historyText = serializeHistory(data.history);
   const analysisText = formatAnalysisForChat(data.analysis);
 
-  return `Контекст клиента (ответы анкеты, анализ и выдержки из PDF):
+  const payload = `Контекст клиента (ответы анкеты, анализ и выдержки из PDF):
 ${analysisText}
 
 Ответы по вопросам (id -> ответ):
@@ -297,33 +367,107 @@ ${historyText || 'Нет истории'}
 ${serialized}
 
 Вопрос клиента: ${data.user_message || ''}`;
+
+  const payloadSize = payload.length;
+  const estimatedTokens = estimateTokens(payload);
+  console.log('[openai] buildChatPayload: Created payload with full data', {
+    payloadSize,
+    estimatedTokens,
+    analysisTextLength: analysisText?.length || 0,
+    serializedLength: serialized?.length || 0,
+    historyTextLength: historyText?.length || 0,
+    answersByIdLength: JSON.stringify(data.answers_by_id || {}).length
+  });
+
+  // Validate required fields
+  if (!data.user_message) {
+    console.warn('[openai] buildChatPayload: Warning - no user_message provided');
+  }
+  if (!data.analysis && !data.context_summary) {
+    console.warn('[openai] buildChatPayload: Warning - no analysis or context_summary provided');
+  }
+
+  return payload;
 }
 
 function extractText(response) {
-  if (!response) return '';
+  if (!response) {
+    console.log('[openai] extractText: No response provided');
+    return '';
+  }
+
+  console.log('[openai] extractText: Processing response', {
+    responseType: typeof response,
+    responseKeys: Object.keys(response),
+    hasOutputText: 'output_text' in response,
+    hasOutput: 'output' in response,
+    outputTextType: typeof response.output_text,
+    outputIsArray: Array.isArray(response.output)
+  });
 
   // Responses API v2: top-level output_text shortcut
   if (typeof response.output_text === 'string' && response.output_text.trim()) {
+    console.log('[openai] extractText: Found output_text at top level', {
+      length: response.output_text.length,
+      preview: response.output_text.substring(0, 100)
+    });
     return response.output_text;
   }
 
   // Responses API: output array with typed blocks
   if (Array.isArray(response.output)) {
-    for (const item of response.output) {
+    console.log('[openai] extractText: Processing output array', {
+      length: response.output.length
+    });
+
+    for (let i = 0; i < response.output.length; i++) {
+      const item = response.output[i];
+      console.log(`[openai] extractText: Processing output[${i}]`, {
+        itemType: typeof item,
+        itemKeys: item ? Object.keys(item) : [],
+        hasOutputText: typeof item?.output_text === 'string',
+        hasContent: Array.isArray(item?.content),
+        contentLength: Array.isArray(item?.content) ? item.content.length : 0
+      });
+
       if (typeof item?.output_text === 'string' && item.output_text.trim()) {
+        console.log('[openai] extractText: Found output_text in item', {
+          length: item.output_text.length,
+          preview: item.output_text.substring(0, 100)
+        });
         return item.output_text;
       }
+
       const content = Array.isArray(item?.content) ? item.content : [];
-      for (const part of content) {
+      for (let j = 0; j < content.length; j++) {
+        const part = content[j];
+        console.log(`[openai] extractText: Processing content[${j}]`, {
+          partType: typeof part,
+          partKeys: part ? Object.keys(part) : [],
+          hasOutputText: typeof part?.output_text === 'string',
+          hasText: typeof part?.text === 'string'
+        });
+
         if (typeof part?.output_text === 'string' && part.output_text.trim()) {
+          console.log('[openai] extractText: Found output_text in content part', {
+            length: part.output_text.length,
+            preview: part.output_text.substring(0, 100)
+          });
           return part.output_text;
         }
         if (typeof part?.text === 'string' && part.text.trim()) {
+          console.log('[openai] extractText: Found text in content part', {
+            length: part.text.length,
+            preview: part.text.substring(0, 100)
+          });
           return part.text;
         }
       }
     }
   }
+  
+  // If we get here, text was not found - log full structure
+  console.error('[openai] extractText: Could not extract text from response. Full structure:', JSON.stringify(response, null, 2).substring(0, 2000));
   
   return '';
 }
