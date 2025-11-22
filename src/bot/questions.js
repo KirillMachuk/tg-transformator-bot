@@ -5,16 +5,16 @@ export const BUSINESS_QUESTIONS = [
     options: [
       { key: 'retail', text: '🛍 Розничная торговля / eCommerce' },
       { key: 'beauty', text: '💄 Бьюти и здоровье' },
-      { key: 'food', text: '🍽 Рестораны / кафе / доставка' },
-      { key: 'tourism', text: '🛎 Гостиницы / отели / туризм' },
       { key: 'household_services', text: '🧰 Бытовые услуги и ремонт' },
-      { key: 'education', text: '🧑‍🏫 Образование / EdTech' },
-      { key: 'finance', text: '🧾 Финансы и юриспруденция' },
-      { key: 'b2b', text: '🏢 B2B-услуги и консалтинг' },
+      { key: 'food', text: '🍽 Рестораны / кафе / доставка' },
       { key: 'marketing', text: '🎨 Маркетинг / креатив / медиа' },
+      { key: 'education', text: '🧑‍🏫 Образование / EdTech' },
+      { key: 'b2b', text: '🏢 B2B-услуги и консалтинг' },
+      { key: 'finance', text: '🧾 Финансы и юриспруденция' },
+      { key: 'logistics', text: '🚚 Логистика / склады / поставки' },
       { key: 'production', text: '🏭 Производство' },
-      { key: 'logistics', text: '🚚 Логистика / поставки / склады' },
       { key: 'real_estate', text: '🏘 Недвижимость и строительство' },
+      { key: 'tourism', text: '🛎 Гостиницы / отели / туризм' },
       { key: 'other', text: '✍️ Другое (ввести свой вариант)', requiresFreeText: true }
     ],
     multiSelect: true
