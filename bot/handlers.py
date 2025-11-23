@@ -346,6 +346,18 @@ async def handle_question_callback(update: Update, context: Context) -> int:
 async def _handle_multi_done(
     query, context: Context, question: Question
 ) -> int:
+    user_data = ensure_user_data(context.user_data)
+    selected_keys = get_selected_option_keys(user_data, question.id)
+    
+    # Проверяем также кастомные ответы
+    answer_entry = get_answer(user_data, question.id, {})
+    custom_answers = answer_entry.get("custom", []) if isinstance(answer_entry, dict) else []
+    
+    # Если ничего не выбрано, показываем мягкое напоминание
+    if not selected_keys and not custom_answers:
+        await query.answer(messages.MULTI_SELECT_EMPTY_REMINDER, show_alert=True)
+        return _state_for_question(question)
+    
     chat_id = query.message.chat_id
     return await send_next_question(chat_id, context)
 async def handle_text_response(update: Update, context: Context) -> int:

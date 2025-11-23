@@ -21,6 +21,7 @@ import {
   appendCustomAnswer,
   getQuestionById,
   getSelectedOptionKeys,
+  getAnswer,
   setCurrentQuestionMessage,
   getCurrentQuestionMessage,
   getSkillLevelText,
@@ -258,6 +259,17 @@ async function handleQuestionCallback(ctx) {
   }
 
   if (payload === 'done') {
+    // Проверяем, выбрано ли хотя бы одно значение
+    const selectedKeys = getSelectedOptionKeys(userData, question.id) || [];
+    const answerEntry = getAnswer(userData, question.id, {});
+    const customAnswers = answerEntry?.custom || [];
+    
+    // Если ничего не выбрано, показываем мягкое напоминание
+    if (selectedKeys.length === 0 && customAnswers.length === 0) {
+      await ctx.answerCbQuery(messages.MULTI_SELECT_EMPTY_REMINDER, { show_alert: true });
+      return;
+    }
+    
     return sendNextQuestion(ctx, chatId);
   }
 
